@@ -73,7 +73,10 @@ jobs:
           cache: true
 
       - name: Install gomarkdoc
-        run: go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest
+        run: go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@v1.1.0
+
+      - name: Install controller-gen
+        run: go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.17.3
 
       - name: Install helm-docs
         run: |

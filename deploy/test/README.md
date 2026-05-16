@@ -118,14 +118,14 @@ mistake green CI for full coverage:
 - **No v2 runtime layer.** The K8s API audit-log event source and runtime
   enforcement are explicitly out of scope for v1, and therefore for this
   harness.
-- **AlertManager JSON shape: skipped by default.** The byte-identical
-  golden test belongs in this suite, but it requires reconfiguring the
-  Portal sink at install time to point at an in-cluster receiver. The
-  current implementation `t.Skip`s with a pointer to the unit tests in
-  `internal/sink/alertmanager`, which already cover the JSON shape, retry
-  semantics, auth headers, and TLS. The unit tests are the regression
-  vector for that contract; the e2e test is reserved for delivery
-  semantics once we add a chart value to override the sink URL.
+- **AlertManager byte-equality is not asserted at e2e.** `TestAlertManagerJSON`
+  asserts the *structural* shape of the captured payload (required label
+  keys, severity=critical, RFC3339Nano startsAt) but not byte-equality with
+  `internal/sink/alertmanager/testdata/expected_alert.json` — `startsAt` is
+  a live timestamp and the per-instance label values (`namespace`, `name`)
+  vary per test run. The byte-identity regression is owned by the unit
+  test at `internal/sink/alertmanager/client_test.go`; the e2e is the
+  delivery regression. Both must stay green.
 - **No TLS / auth assertions against AlertManager.** Same reason as above
   — those are covered by unit tests in `internal/sink/alertmanager`. The
   e2e harness is exclusively about shape and delivery, not transport

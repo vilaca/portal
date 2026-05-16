@@ -528,12 +528,17 @@ func (c *Controller) fanOut(ctx context.Context, v api.Violation) {
 }
 
 // emitGCViolation produces the synthetic "policyreport-gc" violation that
-// tells the PolicyReport sink to drop its entries for the deleted object.
-// We deliberately do not call engine.Evaluate — no live object exists.
-//
-// Per PLAN: in v1 we accept that the sink dedup map may carry a stale
-// entry if the GC sink isn't wired. This is documented.
+// tells the action dispatcher to GC PolicyReport entries for the deleted
+// object. We deliberately do not call engine.Evaluate — no live object
+// exists — and we deliberately do NOT call fanOut: this is a control
+// message, not a finding. Sending it through the sinks would emit a stray
+// AlertManager alert, increment portal_audit_violations, and cause the
+// PolicyReport sink to add a stray Result that this very action is meant
+// to clean up.
 func (c *Controller) emitGCViolation(ctx context.Context, w workItem, meta api.EventMeta) {
+	if c.dispatcher == nil {
+		return
+	}
 	v := api.Violation{
 		Rule:      "__audit_object_deleted__",
 		Severity:  api.SeverityInfo,
@@ -546,7 +551,7 @@ func (c *Controller) emitGCViolation(ctx context.Context, w workItem, meta api.E
 		Actions:   []api.ActionSpec{{Type: policyReportGCActionType}},
 		Source:    api.ViolationSource{EventID: meta.EventID, Operation: "delete"},
 	}
-	c.fanOut(ctx, v)
+	c.dispatcher.Dispatch(ctx, v)
 }
 
 // runLeaderElection runs the lease loop. OnStartedLeading flips isLeader

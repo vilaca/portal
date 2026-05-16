@@ -40,9 +40,20 @@ generate-crds:
 
 generate-docs:
 	$(GO) run ./internal/sink/prometheus/cmd/metricsdoc > docs/reference/metrics.md
-	$(GO) run ./cmd/portal docgen > docs/reference/cli.md || true
-	$(HELM_DOCS) -c deploy/helm/portal -o ../../../docs/reference/helm-values.md || true
-	$(GOMARKDOC) -o docs/plugin-author/interface-reference.md ./internal/api || true
+	$(GO) run ./cmd/portal docgen --out docs/reference/cli.md
+	$(HELM_DOCS) -c deploy/helm/portal -o ../../../docs/reference/helm-values.md
+	$(GOMARKDOC) -o docs/plugin-author/interface-reference.md ./internal/api
+
+# generate-docs-check is the CI drift gate. Runs generate-docs and fails if
+# the working tree diverges. Run `make generate-docs` locally + commit if
+# this fails.
+.PHONY: generate-docs-check
+generate-docs-check: generate-docs
+	@if [ -n "$$(git status --porcelain docs/)" ]; then \
+		echo "Generated docs are out of date. Run 'make generate-docs' and commit:"; \
+		git --no-pager diff --stat docs/; \
+		exit 1; \
+	fi
 
 docs:
 	@command -v mkdocs >/dev/null && mkdocs build --strict || echo "mkdocs not installed; skipping"

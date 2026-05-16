@@ -28,6 +28,7 @@ import (
 	"github.com/vilaca/portal/internal/actions/evict"
 	"github.com/vilaca/portal/internal/actions/label"
 	"github.com/vilaca/portal/internal/actions/patchnp"
+	"github.com/vilaca/portal/internal/actions/policyreportgc"
 	"github.com/vilaca/portal/internal/actions/revoketoken"
 	"github.com/vilaca/portal/internal/admission"
 	"github.com/vilaca/portal/internal/api"
@@ -56,6 +57,17 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 	if opts.network && !opts.audit {
 		log.Warn("--network implies --audit (informers required); enabling")
 		opts.audit = true
+	}
+	// CR loading depends on the audit controller's controller-runtime
+	// Manager + cache. Running with --admission only + --rules-cr would
+	// silently load zero rules; fail fast so operators see the misconfig
+	// instead of an inert webhook.
+	if opts.rulesCR && !opts.audit {
+		if opts.rulesFolder == "" {
+			return fmt.Errorf("--rules-cr requires --audit (or supply --rules-folder)")
+		}
+		log.Warn("--rules-cr without --audit is a no-op; rules will be loaded only from --rules-folder")
+		opts.rulesCR = false
 	}
 
 	// 1. Kubernetes clients.
@@ -102,6 +114,7 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 		patchnp.Configure(dynClient)
 		evict.Configure(typedClient)
 		revoketoken.Configure(typedClient)
+		policyreportgc.Configure(dynClient)
 	}
 
 	// 3. Configure remote sinks.
@@ -143,12 +156,13 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 
 	// 7. Action dispatcher.
 	actMap := map[string]api.Action{
-		"label":        api.ActionFor("label"),
-		"annotate":     api.ActionFor("annotate"),
-		"patchnp":      api.ActionFor("patchnp"),
-		"evict":        api.ActionFor("evict"),
-		"revoketoken":  api.ActionFor("revoketoken"),
-		"alertmanager": api.ActionFor("alertmanager"),
+		"label":               api.ActionFor("label"),
+		"annotate":            api.ActionFor("annotate"),
+		"patch-networkpolicy": api.ActionFor("patch-networkpolicy"),
+		"evict":               api.ActionFor("evict"),
+		"revoketoken":         api.ActionFor("revoketoken"),
+		"alertmanager":        api.ActionFor("alertmanager"),
+		"policyreport-gc":     api.ActionFor("policyreport-gc"),
 	}
 	for k, v := range actMap {
 		if v == nil {

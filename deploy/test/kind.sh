@@ -98,7 +98,7 @@ log "applying CRDs from deploy/crds/"
 kubectl apply -f "${REPO_ROOT}/deploy/crds/"
 
 # -----------------------------------------------------------------------------
-# 3) Image build + load
+# 3) Image build + load (portal + alertmanager-receiver fixture)
 # -----------------------------------------------------------------------------
 log "building Portal image portal:e2e"
 docker build \
@@ -106,12 +106,23 @@ docker build \
   -f "${SCRIPT_DIR}/Dockerfile.e2e" \
   "${REPO_ROOT}"
 
-log "loading image into kind"
+log "building alertmanager-receiver fixture"
+docker build \
+  -t alertmanager-receiver:e2e \
+  "${SCRIPT_DIR}/fixtures/alertmanager-receiver"
+
+log "loading images into kind"
 kind load docker-image portal:e2e --name "${KIND_CLUSTER_NAME}"
+kind load docker-image alertmanager-receiver:e2e --name "${KIND_CLUSTER_NAME}"
 
 # -----------------------------------------------------------------------------
-# 4) Helm install
+# 4) Deploy receiver, then Portal
 # -----------------------------------------------------------------------------
+log "deploying alertmanager-receiver fixture"
+kubectl apply -f "${SCRIPT_DIR}/fixtures/alertmanager-receiver/deploy.yaml"
+kubectl wait --for=condition=Available deployment/alertmanager-receiver \
+  -n portal-e2e --timeout=2m
+
 log "installing Portal Helm chart"
 helm upgrade --install portal "${REPO_ROOT}/deploy/helm/portal" \
   -n portal-system --create-namespace \
@@ -120,6 +131,7 @@ helm upgrade --install portal "${REPO_ROOT}/deploy/helm/portal" \
   --set image.pullPolicy=Never \
   --set audit.enabled=true \
   --set network.enabled=true \
+  --set alertmanager.url=http://alertmanager-receiver.portal-e2e.svc:9093/api/v2/alerts \
   --wait --timeout 2m
 
 log "waiting for Portal deployment to become Available"

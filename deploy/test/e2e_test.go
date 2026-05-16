@@ -13,7 +13,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -616,27 +615,127 @@ spec:
 // -----------------------------------------------------------------------------
 
 func TestAlertManagerJSON(t *testing.T) {
-	// We deploy a tiny in-cluster echo receiver as a Deployment + Service,
-	// point Portal at it via a per-test sink config, fire a violation, and
-	// compare the captured payload to internal/sink/alertmanager/testdata/
-	// expected_alert.json after canonical normalisation.
-	//
-	// Punted: we do NOT reconfigure Portal at runtime — the chart-installed
-	// instance writes to its configured sink. This test instead instantiates
-	// the receiver, fires a synthetic violation via the audit pipeline, and
-	// reads the received payload from the receiver's HTTP log endpoint.
-	//
-	// See deploy/test/README.md "Honest gaps" for details.
-	t.Skip("requires Portal sink override at install time — covered by unit tests in internal/sink/alertmanager")
-	expected, err := os.ReadFile(filepath.Join(e.repoRoot, "internal/sink/alertmanager/testdata/expected_alert.json"))
+	// kind.sh installs Portal with --set alertmanager.url=http://
+	// alertmanager-receiver.portal-e2e.svc:9093/api/v2/alerts and deploys
+	// the receiver fixture from deploy/test/fixtures/alertmanager-receiver.
+	// This test:
+	//   1. resets the receiver's capture buffer via /reset,
+	//   2. applies a PortalClusterRule that fires an alertmanager action,
+	//   3. creates a violating pod,
+	//   4. polls /captured until ≥1 payload arrives,
+	//   5. asserts structural fields against the expected_alert.json golden
+	//      (byte-equality is impossible in e2e because startsAt drifts).
+	if _, err := receiverGET(context.Background(), "/reset"); err != nil {
+		t.Fatalf("reset receiver: %v", err)
+	}
+
+	ns := makeNamespace(t)
+	ruleName := "e2e-am-privileged"
+	applyPortalClusterRule(t, ruleName, map[string]any{
+		"enabled":           true,
+		"severity":          "critical",
+		"mode":              []any{"audit"},
+		"enforcementAction": "warn",
+		"match": map[string]any{
+			"gvk":        []any{map[string]any{"group": "", "version": "v1", "kind": "Pod"}},
+			"namespaces": map[string]any{"include": []any{ns}},
+		},
+		"rule":  "container.securityContext?.privileged == true",
+		"alert": "e2e-am-privileged",
+	})
+
+	pod := fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata: {name: amtest, namespace: %s}
+spec:
+  containers:
+    - name: app
+      image: nginx
+      securityContext: {privileged: true}
+`, ns)
+	if out, err := kubectlApply(t, pod); err != nil {
+		t.Fatalf("apply pod: %v\n%s", err, out)
+	}
+
+	var captured []json.RawMessage
+	eventuallyMsg(t, 30*time.Second, "expected ≥1 AlertManager payload to arrive at receiver", func(ctx context.Context) (bool, error) {
+		body, err := receiverGET(ctx, "/captured")
+		if err != nil {
+			return false, err
+		}
+		if err := json.Unmarshal(body, &captured); err != nil {
+			return false, err
+		}
+		return len(captured) >= 1, nil
+	})
+
+	// The receiver records the raw POST body, which is an array of alert
+	// objects (one alert per Violation in our case). Find an alert whose
+	// labels.alertname matches the rule name and assert structure.
+	var matched map[string]any
+outer:
+	for _, body := range captured {
+		var alerts []map[string]any
+		if err := json.Unmarshal(body, &alerts); err != nil {
+			continue
+		}
+		for _, a := range alerts {
+			labels, _ := a["labels"].(map[string]any)
+			if labels["alertname"] == ruleName {
+				matched = a
+				break outer
+			}
+		}
+	}
+	if matched == nil {
+		t.Fatalf("no captured alert with alertname=%q; received %d payloads", ruleName, len(captured))
+	}
+
+	expectedRaw, err := os.ReadFile(filepath.Join(e.repoRoot, "internal/sink/alertmanager/testdata/expected_alert.json"))
 	if err != nil {
 		t.Fatalf("read golden: %v", err)
 	}
-	var canon any
-	if err := json.Unmarshal(expected, &canon); err != nil {
+	var goldenArr []map[string]any
+	if err := json.Unmarshal(expectedRaw, &goldenArr); err != nil {
 		t.Fatalf("parse golden: %v", err)
 	}
-	_ = http.StatusOK // keep imports honest if the skip is removed
+	if len(goldenArr) == 0 {
+		t.Fatal("golden file is empty")
+	}
+	gold := goldenArr[0]
+
+	// Structural assertions: every label key the golden defines must be
+	// present in the captured alert, and the labels.severity must match.
+	// Timestamps and the per-instance label values (namespace, name) are
+	// fixture-specific so we don't compare them byte-for-byte.
+	for _, key := range []string{"alertname", "severity", "namespace", "kind", "name", "mode", "rule"} {
+		if _, ok := matched["labels"].(map[string]any)[key]; !ok {
+			t.Errorf("captured alert missing label %q; have %v", key, matched["labels"])
+		}
+		if _, ok := gold["labels"].(map[string]any)[key]; !ok {
+			t.Errorf("golden missing expected label %q — fix expected_alert.json or this test", key)
+		}
+	}
+	if got := matched["labels"].(map[string]any)["severity"]; got != "critical" {
+		t.Errorf("severity = %v; want critical", got)
+	}
+	// startsAt must be RFC3339-parseable.
+	if _, err := time.Parse(time.RFC3339Nano, matched["startsAt"].(string)); err != nil {
+		t.Errorf("startsAt not RFC3339Nano: %v", err)
+	}
+}
+
+// receiverGET makes a GET against the alertmanager-receiver fixture via the
+// kube-apiserver service proxy. This works from outside the cluster (where
+// the test runs) without port-forwarding.
+func receiverGET(ctx context.Context, path string) ([]byte, error) {
+	return e.clientset.CoreV1().RESTClient().Get().
+		Namespace("portal-e2e").
+		Resource("services").
+		Name("alertmanager-receiver:9093").
+		SubResource("proxy").
+		Suffix(path).
+		DoRaw(ctx)
 }
 
 // -----------------------------------------------------------------------------

@@ -1,6 +1,8 @@
 package audit
 
 import (
+	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -126,6 +128,65 @@ func TestRESTMapperAccessor(t *testing.T) {
 	}
 	if src.(*Controller).RESTMapper() != m {
 		t.Fatal("RESTMapper() accessor did not return the configured mapper")
+	}
+}
+
+type countingSink struct{ count atomic.Int64 }
+
+func (s *countingSink) Name() string                                 { return "counting" }
+func (s *countingSink) Emit(_ context.Context, _ api.Violation) error { s.count.Add(1); return nil }
+func (s *countingSink) Close() error                                  { return nil }
+
+type countingDispatcher struct {
+	count atomic.Int64
+	last  api.Violation
+}
+
+func (d *countingDispatcher) Dispatch(_ context.Context, v api.Violation) {
+	d.last = v
+	d.count.Add(1)
+}
+func (d *countingDispatcher) Drain(_ context.Context) error { return nil }
+
+// TestEmitGCViolation_BypassesSinks is the regression for the bug where
+// synthetic delete-GC violations were flowing through fanOut, polluting
+// every sink (stdout, prometheus, alertmanager, and worst — the policyreport
+// sink, which would add a Result that the GC action is meant to remove).
+// Post-fix: GC goes to the dispatcher only.
+func TestEmitGCViolation_BypassesSinks(t *testing.T) {
+	sink := &countingSink{}
+	disp := &countingDispatcher{}
+	c := &Controller{
+		sinks:      []api.OutputSink{sink},
+		dispatcher: disp,
+	}
+	c.emitGCViolation(context.Background(),
+		workItem{GVK: schema.GroupVersionKind{Version: "v1", Kind: "Pod"}, Namespace: "ns", Name: "p1", EventType: "delete"},
+		api.EventMeta{Source: "audit", EventID: "evt-1", At: time.Now()},
+	)
+	if got := sink.count.Load(); got != 0 {
+		t.Errorf("sink emitted %d times; want 0 — GC should not reach sinks", got)
+	}
+	if got := disp.count.Load(); got != 1 {
+		t.Errorf("dispatcher dispatched %d times; want 1", got)
+	}
+	if disp.last.Rule != "__audit_object_deleted__" {
+		t.Errorf("dispatched violation Rule=%q; want __audit_object_deleted__", disp.last.Rule)
+	}
+	if len(disp.last.Actions) != 1 || disp.last.Actions[0].Type != policyReportGCActionType {
+		t.Errorf("dispatched violation actions=%v; want one policyreport-gc", disp.last.Actions)
+	}
+}
+
+func TestEmitGCViolation_NilDispatcherIsNoop(t *testing.T) {
+	sink := &countingSink{}
+	c := &Controller{sinks: []api.OutputSink{sink}, dispatcher: nil}
+	c.emitGCViolation(context.Background(),
+		workItem{GVK: schema.GroupVersionKind{Version: "v1", Kind: "Pod"}, Name: "p"},
+		api.EventMeta{},
+	)
+	if got := sink.count.Load(); got != 0 {
+		t.Errorf("sink emitted with nil dispatcher; want 0")
 	}
 }
 

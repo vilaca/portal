@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.vscode
+bin
+dist
+site
+deploy/test
+docs
+*.md
+!go.sum
+!go.mod
