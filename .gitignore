@@ -1,0 +1,11 @@
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+.vscode/
+.idea/
+.DS_Store
+node_modules/
+site/
+__pycache__/
