@@ -67,6 +67,20 @@ func (d *dispatcher) ParseError(rule string) string {
 	return v.(string)
 }
 
+// Reload walks every rule currently in the index and (re)compiles its
+// expression so compile errors are surfaced immediately, without waiting
+// for a matching Evaluate. Loaders (folder watcher, CR reconciler) call
+// this right after idx.Replace so admission-mode rules — which may never
+// see an Evaluate until a real request lands — still get their
+// .status.parseError populated.
+func (d *dispatcher) Reload() {
+	for _, r := range d.idx.All() {
+		if _, err := d.programFor(r); err != nil {
+			_ = err
+		}
+	}
+}
+
 // CompileErrors returns a snapshot of every compile error keyed by rule name.
 func (d *dispatcher) CompileErrors() map[string]string {
 	out := map[string]string{}

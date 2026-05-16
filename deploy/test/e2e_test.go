@@ -241,6 +241,10 @@ func applyPortalClusterRule(t *testing.T, name string, spec map[string]any) {
 	t.Cleanup(func() {
 		bg := context.Background()
 		_ = e.dyn.Resource(gvrPortalClusterRule).Delete(bg, name, metav1.DeleteOptions{})
+		// Gate the next subtest on the reconciler observing the deletion.
+		// Otherwise back-to-back tests can briefly see the previous rule
+		// still active in the engine's index.
+		waitForRuleAbsent(t, name)
 	})
 	// Wait until the CRD's status reconciler has written .status.lastApplied
 	// — at that point the rule is loaded into the engine's index and the
@@ -254,6 +258,22 @@ func applyPortalClusterRule(t *testing.T, name string, spec map[string]any) {
 		}
 		_, ok, _ := unstructured.NestedString(got.Object, "status", "lastApplied")
 		return ok, nil
+	})
+}
+
+// waitForRuleAbsent polls the apiserver until the named PortalClusterRule is
+// gone (404 from Get). Used from t.Cleanup to keep the previous test's rule
+// from leaking into the next subtest's reconcile snapshot.
+func waitForRuleAbsent(t *testing.T, name string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_ = wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		_, err := e.dyn.Resource(gvrPortalClusterRule).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, nil
 	})
 }
 

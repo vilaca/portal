@@ -156,11 +156,6 @@ rules:
   folderConfigMap: ""
   # -- Watch PortalClusterRule + PortalRule CRs (CLI: --rules-cr).
   cr: true
-  # -- Install a small bootstrap set of PortalClusterRules covering the
-  # migrated podwatcher-poc examples. Off by default — operators copy the
-  # rules they want from examples/rules/ and kubectl apply them. Set to
-  # true once the chart ships a post-install bundle (not in v1).
-  bootstrap: false
 
 # -- Additional GVKs to start informers for, in "group/version/Kind" form.
 # Empty group renders as "/v1/ConfigMap" etc. These extend the set computed

@@ -62,7 +62,6 @@ Kubernetes: `>=1.27.0-0`
 | resources.limits.memory | string | `"256Mi"` | Memory limit per Portal pod. |
 | resources.requests.cpu | string | `"100m"` | CPU request per Portal pod. |
 | resources.requests.memory | string | `"128Mi"` | Memory request per Portal pod. |
-| rules.bootstrap | bool | `false` | Install a small bootstrap set of PortalClusterRules covering the migrated podwatcher-poc examples. Off by default — operators copy the rules they want from examples/rules/ and kubectl apply them. Set to true once the chart ships a post-install bundle (not in v1). |
 | rules.cr | bool | `true` |  |
 | rules.folderConfigMap | string | `""` | Name of an existing ConfigMap holding rule YAML files. Mounted at /etc/portal/rules and passed via --rules-folder. Empty disables folder loading. |
 | securityContext.allowPrivilegeEscalation | bool | `false` | Disallow privilege escalation. |

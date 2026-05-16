@@ -383,6 +383,7 @@ func defaultAuditGVKs() []schema.GroupVersionKind {
 		{Group: "apps", Version: "v1", Kind: "DaemonSet"},
 		{Group: "batch", Version: "v1", Kind: "Job"},
 		{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"},
+		{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"},
 	}
 }
 

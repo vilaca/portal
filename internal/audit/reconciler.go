@@ -1,14 +1,14 @@
 // reconciler.go contains the controller-runtime Reconciler that watches
 // PortalClusterRule / PortalRule CRs, reloads the engine's RuleIndex on
 // every change, and writes .status back to each CR. Status writes go
-// through a token-bucket rate limiter (rate.NewLimiter(1, 10)) so noisy
-// rules don't hammer the API server.
+// through a token-bucket rate limiter (rate.NewLimiter(10, 50)) so a
+// burst of rule applies isn't starved while still capping API server
+// load if something flaps.
 //
-// This sits on top of internal/rule/v1alpha1's own SetupWithManager: that
-// reconciler is responsible for the periodic status sweep; the one here
-// is the index-reload trigger. We keep them separate because the index
-// reload is a global side-effect (one event reloads ALL rules) while the
-// status update is per-rule.
+// The audit reconciler is the sole writer of PortalClusterRule.status
+// and PortalRule.status: the v1alpha1 status reconciler is intentionally
+// not registered alongside it (see cmd/portal/wire.go) so consumers can
+// treat status.lastApplied as "this rule is live in the engine".
 
 package audit
 
@@ -34,6 +34,15 @@ type RuleIndexReplacer interface {
 	Replace(snapshot []api.Rule)
 }
 
+// engineReloader is the optional engine surface we call after Index.Replace
+// to force eager compilation of every rule in the new snapshot. Without it,
+// admission-only rules never get a chance to surface compile errors via
+// .status.parseError until an admission request lands. The dispatcher in
+// internal/engine satisfies this.
+type engineReloader interface {
+	Reload()
+}
+
 // RuleReconciler reconciles PortalClusterRule and PortalRule CRs. On every
 // reconcile it re-lists both kinds and pushes the merged snapshot into the
 // index; it also patches the per-CR status sub-resource (rate-limited).
@@ -48,14 +57,17 @@ type RuleReconciler struct {
 	lastSpec map[string]api.Rule // by Source.Path
 }
 
-// NewRuleReconciler constructs a reconciler with a 1/sec, burst 10 token
-// bucket guarding status writes.
+// NewRuleReconciler constructs a reconciler with a 10/sec, burst 50 token
+// bucket guarding status writes. The earlier 1/sec budget starved status
+// writes when a burst of CR applies arrived in quick succession and the
+// e2e harness timed out waiting on .status.lastApplied; the workqueue
+// already provides controller-runtime-level rate limiting underneath.
 func NewRuleReconciler(c client.Client, idx RuleIndexReplacer, eng crd.ParseErrorSource) *RuleReconciler {
 	return &RuleReconciler{
 		Client:   c,
 		Index:    idx,
 		Engine:   eng,
-		limiter:  rate.NewLimiter(rate.Limit(1), 10),
+		limiter:  rate.NewLimiter(rate.Limit(10), 50),
 		lastSpec: map[string]api.Rule{},
 	}
 }
@@ -90,8 +102,13 @@ func (r *RuleReconciler) Reconcile(ctx context.Context, req reconcile.Request) (
 	if r.Index != nil {
 		r.Index.Replace(rules)
 	}
-	// Status patch is rate-limited; if we're over budget, the periodic
-	// resync from the v1alpha1 Reconciler will catch up later.
+	// Eagerly recompile every rule so admission-only rules that never see
+	// an Evaluate still surface compile errors via .status.parseError.
+	if reloader, ok := r.Engine.(engineReloader); ok {
+		reloader.Reload()
+	}
+	// Status patch is rate-limited; if we're over budget, the next reconcile
+	// for the same CR will catch up.
 	if r.limiter.Allow() {
 		_ = r.patchStatusForRequest(ctx, req)
 	}
@@ -145,14 +162,3 @@ func (r *RuleReconciler) snapshot(ctx context.Context) ([]api.Rule, error) {
 	return out, nil
 }
 
-// writeAllStatus walks the engine's compile-error map and updates per-CR
-// status. The actual status patches are delegated to the
-// internal/rule/v1alpha1.Reconciler so we don't duplicate the patch logic.
-func (r *RuleReconciler) writeAllStatus(_ context.Context) error {
-	// Intentionally a no-op shim in v1: per-CR status patching is owned by
-	// internal/rule/v1alpha1.Reconciler, which runs in the same manager and is
-	// triggered by the same CR change. We expose this method so future
-	// audit-specific status (e.g. last-evaluated timestamp) can be added
-	// without re-wiring the controller.
-	return nil
-}

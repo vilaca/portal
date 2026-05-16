@@ -13,41 +13,29 @@ State at commit `0cf7cb7`. A fresh `./deploy/test/kind.sh` against a clean clust
 
 These are the highest-likelihood, lowest-effort fixes. Each should unblock one or more e2e tests in well under an hour.
 
-### 1.1 Bump the audit reconciler's status rate limiter
+### 1.1 Bump the audit reconciler's status rate limiter — **DONE**
 
-**File:** `internal/audit/reconciler.go`
-**Line:** `NewRuleReconciler` constructs `rate.NewLimiter(rate.Limit(1), 10)` — 1/sec sustained, burst 10.
-
-When `TestRuleMigrationCompileLoop` applies 6 rules in a tight burst the limiter starves status writes and the test's `wait for .status.lastApplied` helper times out after 30s. The 1/sec limit dates from when v1alpha1 was the status writer; now the audit reconciler is the sole writer and the rate-limit gate is the only thing slowing status writes. **Change to `rate.NewLimiter(rate.Limit(10), 50)` (or remove the gate entirely — Reconcile itself is already gated by controller-runtime's workqueue).**
+`internal/audit/reconciler.go::NewRuleReconciler` now constructs `rate.NewLimiter(rate.Limit(10), 50)`. The 1/sec gate was starving the e2e harness's `wait for .status.lastApplied` whenever a burst of CR applies arrived; the workqueue already provides upstream rate limiting.
 
 Likely unsticks: `TestRuleMigrationCompileLoop`, `TestCRDRuleLoading`.
 
-### 1.2 Add `policy/v1/PodDisruptionBudget` to the default audited GVKs
+### 1.2 Add `policy/v1/PodDisruptionBudget` to the default audited GVKs — **DONE**
 
-**File:** `cmd/portal/wire.go`
-**Func:** `defaultAuditGVKs()`
-
-Currently watches Pod, Namespace, Deployment, StatefulSet, DaemonSet, Job, NetworkPolicy. **`TestCrossResource`** uses `cluster.poddisruptionbudgets.list(...)` from an expr-lang rule. With no informer on PDBs the lookup cache returns nothing → no violation. Add `{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}` to the list.
+`cmd/portal/wire.go::defaultAuditGVKs()` now includes `{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}` so `TestCrossResource`'s `cluster.poddisruptionbudgets.list(...)` lookup hits a populated informer cache.
 
 Better long term: have `internal/lookup` lazily start informers for any GVK a rule references (via `ExtractClusterRefs` at compile time + `audit.SharedInformerFactory().ForResource(gvr)`), so operators don't have to remember to add CLI flags.
 
 Likely unsticks: `TestCrossResource`.
 
-### 1.3 Force the engine to compile rules after `idx.Replace`
+### 1.3 Force the engine to compile rules after `idx.Replace` — **DONE**
 
-**File:** `internal/engine/dispatcher.go`
-
-The engine pre-compiles every rule in `idx.All()` at construction — but `idx.Replace` (from the audit reconciler) bypasses that path. Lazy compile fires on the first `Evaluate`, but for admission-mode rules **no Evaluate runs until a pod admission request comes in**. So `.status.parseError` stays empty for any rule that hasn't yet faced an admission request, which breaks `TestCRDRuleLoading`.
-
-**Fix:** expose `engine.Reload()` that walks `idx.All()` and pre-compiles, calling it from the audit reconciler right after `idx.Replace(rules)`. Records compile errors immediately. (Alternatively: implement a compile-on-store callback in the index.)
+`internal/engine/dispatcher.go` now exposes `Reload()`, which walks `idx.All()` and pre-compiles every rule. The audit reconciler calls it right after `idx.Replace(rules)` via an optional `engineReloader` type-assertion on the dispatcher. Admission-only rules now surface compile errors immediately instead of waiting for the first admission request.
 
 Likely unsticks: `TestCRDRuleLoading`.
 
-### 1.4 Enable action RBAC for e2e
+### 1.4 Enable action RBAC for e2e — **DONE**
 
-**File:** `deploy/test/kind.sh`
-
-Action RBAC (`rbac.actions.label`, `.evict`, `.annotate`, `.patchnp`, `.revoketoken`) defaults to `false` in `values.yaml`. The e2e suite expects label + evict to work. Add `--set rbac.actions.label=true --set rbac.actions.evict=true` to the `helm upgrade --install` call. Same for any other action tests added later.
+`deploy/test/kind.sh` now passes `--set rbac.actions.label=true --set rbac.actions.annotate=true --set rbac.actions.evict=true --set rbac.actions.patchnp=true --set rbac.actions.revoketoken=true` to the helm install so every action the suite touches has the cluster permissions it needs.
 
 Likely unsticks: `TestActions`.
 
@@ -103,13 +91,13 @@ The receiver fixture works. But if you change the alertmanager sink's JSON shape
 
 ## 3. Polish items found in passing
 
-### 3.1 Dead code: `writeAllStatus` in `audit/reconciler.go`
+### 3.1 Dead code: `writeAllStatus` in `audit/reconciler.go` — **DONE**
 
-After the v1alpha1 status reconciler was disabled, `writeAllStatus` is unreachable. Remove it; replace with a comment explaining the audit reconciler is the sole status writer. The unused `Engine` field used by writeAllStatus stays — it's referenced by `patchStatusForRequest`.
+Removed. The package-level doc now explicitly names the audit reconciler as the sole status writer.
 
-### 3.2 Unused: `internal/rule/loader/cr.go`
+### 3.2 Unused: `internal/rule/loader/cr.go` — **DONE**
 
-`NewCR` and `NewCRFromClient` were the original Wave 2 CR loader. They were never wired (wire.go's `--rules-cr` branch was a stub for a long time, and the eventual fix uses the audit RuleReconciler directly, not this loader). Delete the file and its test; the audit reconciler owns the CR loading concern.
+Deleted `internal/rule/loader/cr.go` and `internal/rule/loader/cr_test.go`. CR loading is owned by the audit `RuleReconciler` end-to-end.
 
 ### 3.3 No root-level `README.md`
 
@@ -119,27 +107,25 @@ The repo root has `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, `
 - Links to `docs/README.md` (the docs site entry).
 - Lists the four commands an operator types: `make build`, `make test`, `helm install`, `./deploy/test/kind.sh`.
 
-### 3.4 Generated-docs drift on the docs CI gate
+### 3.4 Generated-docs drift on the docs CI gate — **DONE**
 
-The `docs-generation-drift` CI job runs `make generate-docs` and `git diff --exit-code`. Today's commit (`0cf7cb7`) changed the rule schema layout (`actions[*].params`) and added the init-certs subcommand, both of which feed `docs/reference/cli.md` and `docs/reference/helm-values.md`. **Run `make generate-docs` locally before the next PR** and commit the regenerated content, or the gate will fail.
+Ran `make generate-docs`. Only `docs/reference/helm-values.md` drifted (the `rules.bootstrap` removal from 3.5). CLI doc was already current.
 
-### 3.5 `rules.bootstrap` default
+### 3.5 `rules.bootstrap` default — **DONE**
 
-`deploy/helm/portal/values.yaml` has `rules.bootstrap: false` with a comment "Set to true once the chart ships a post-install bundle (not in v1)." There's no path to setting it to true today — the templates that would render the bundle don't exist. Either:
-- Remove the value entirely (don't expose what doesn't work), or
-- Add a `templates/bootstrap-rules-job.yaml` that kubectl-applies the migrated `examples/rules/*.yaml` via a post-install hook.
+Removed from `deploy/helm/portal/values.yaml`. No template ever consumed it; exposing it implied a feature that didn't exist. If we later ship a post-install bundle it can come back alongside the actual template.
 
 ### 3.6 ADR header polish
 
 The six ADRs under `docs/adr/` use `# Title` but lack the standard Nygard fields (Status, Context, Decision, Consequences). They read fine as prose but auditors / new contributors may want the structured form. One-pass conversion is mechanical.
 
-### 3.7 `internal/audit/controller.go::defaultResourceForGVK`
+### 3.7 `internal/audit/controller.go::defaultResourceForGVK` — **DONE (no-op)**
 
-After we wired the discovery-backed RESTMapper, this naive fallback is only used when the mapper isn't supplied (tests). The function is correct as a fallback, but the comment in the file still says "production wire-up supplies a RESTMapper-backed override." Update the comment to point at `Options.RESTMapper` since the production wiring is now mainline.
+Re-checked the comment after the RESTMapper wire-up: it already reads "Production wire-up supplies a RESTMapper-backed override via Options.RESTMapper; tests fall through here when no mapper is provided." No change needed.
 
-### 3.8 Test cleanup — rules leaking between subtests
+### 3.8 Test cleanup — rules leaking between subtests — **DONE**
 
-Each subtest's `t.Cleanup` calls `Delete` on the PortalClusterRule it created. But the audit reconciler has no callback when the deletion finishes loading into the index — subsequent tests can briefly see the previous test's rule active. Add a `waitForRuleAbsent(name)` helper that polls `.status` until the rule is gone, and call it from `Cleanup`.
+Added a `waitForRuleAbsent(t, name)` helper in `deploy/test/e2e_test.go` that polls until the rule's `Get` returns 404. `applyPortalClusterRule`'s `t.Cleanup` now calls it after `Delete`, so subsequent tests start with a clean index.
 
 ---
 
