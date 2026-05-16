@@ -1,0 +1,12 @@
+# Rule: deny pods that share the host network namespace.
+name: host-network
+enabled: true
+severity: critical
+mode: [admission, audit]
+enforcementAction: deny
+match:
+  gvk:
+    - {group: "", version: v1, kind: Pod}
+rule: >
+  spec.hostNetwork == true
+alert: insecure-workload

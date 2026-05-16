@@ -1,0 +1,16 @@
+# Rule: deny pods with a privileged container or with allowPrivilegeEscalation.
+# Direct migration of podwatcher-poc/examples/rules/privilegedContainer.yaml.
+name: privileged-container
+enabled: true
+severity: critical
+mode: [admission, audit]
+enforcementAction: deny
+match:
+  gvk:
+    - {group: "", version: v1, kind: Pod}
+rule: >
+  container.securityContext.privileged == true
+  || container.securityContext.allowPrivilegeEscalation == true
+alert: insecure-workload
+actions:
+  - {type: alertmanager, template: insecure-workload}

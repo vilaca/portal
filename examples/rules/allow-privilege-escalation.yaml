@@ -1,0 +1,14 @@
+# Rule: warn when allowPrivilegeEscalation is true or unset.
+# allowPrivilegeEscalation defaults to true if absent — Portal treats nil as
+# "not explicitly denied" so the rule fires unless the field is set to false.
+name: allow-privilege-escalation
+enabled: true
+severity: high
+mode: [admission, audit]
+enforcementAction: warn
+match:
+  gvk:
+    - {group: "", version: v1, kind: Pod}
+rule: >
+  container.securityContext.allowPrivilegeEscalation != false
+alert: insecure-workload

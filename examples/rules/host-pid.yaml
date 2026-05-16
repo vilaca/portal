@@ -1,0 +1,12 @@
+# Rule: deny pods that share the host PID namespace.
+name: host-pid
+enabled: true
+severity: critical
+mode: [admission, audit]
+enforcementAction: deny
+match:
+  gvk:
+    - {group: "", version: v1, kind: Pod}
+rule: >
+  spec.hostPID == true
+alert: insecure-workload

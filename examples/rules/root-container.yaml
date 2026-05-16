@@ -1,0 +1,14 @@
+# Rule: warn when a container runs as root (uid 0) at either container or
+# pod-level securityContext. Mirrors podwatcher-poc/examples/rules/prevent-run-as-root.yaml.
+name: root-container
+enabled: true
+severity: high
+mode: [admission, audit]
+enforcementAction: warn
+match:
+  gvk:
+    - {group: "", version: v1, kind: Pod}
+rule: >
+  securityContext.runAsUser == 0
+  || container.securityContext.runAsUser == 0
+alert: insecure-workload

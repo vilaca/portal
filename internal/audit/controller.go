@@ -256,6 +256,16 @@ func (c *Controller) Lister(gvk schema.GroupVersionKind) (cache.GenericLister, e
 	return l, nil
 }
 
+// WatchedGVKs returns every GVK this controller has an informer for. Order is
+// unspecified. Used by the lookup module to advertise cluster.<gvk>.* helpers.
+func (c *Controller) WatchedGVKs() []schema.GroupVersionKind {
+	out := make([]schema.GroupVersionKind, 0, len(c.listers))
+	for gvk := range c.listers {
+		out = append(out, gvk)
+	}
+	return out
+}
+
 // Start implements api.EventSource. It is blocking — the underlying
 // goroutines (informer factory, leader election, worker pool) all run for
 // the lifetime of ctx. onEvent may be nil; when non-nil it is invoked for
