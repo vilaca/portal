@@ -247,14 +247,10 @@ func applyPortalClusterRule(t *testing.T, name string, spec map[string]any) {
 		waitForRuleAbsent(t, name)
 	})
 	// Wait until the CRD's status reconciler has written .status.lastApplied
-	// — at that point at least one replica's audit reconciler has run
-	// idx.Replace + Reload. With 2 replicas each running their own
-	// controller-runtime Manager (no leader election on the CR loader),
-	// the second replica's index update can lag the status patch by tens
-	// to hundreds of milliseconds. Since admission requests land on
-	// either replica round-robin, we then sleep a short grace period to
-	// let the second replica catch up before the test fires its first
-	// admission / audit request. 1 s is generous for kind in CI.
+	// — at that point the rule is loaded into the engine's index and the
+	// admission webhook will see it on the next request. The suite installs
+	// Portal with replicaCount=1 (TestHAFailClosed scales out explicitly),
+	// so there's no multi-replica race to wait through here.
 	eventuallyMsg(t, 30*time.Second, fmt.Sprintf("rule %q never reached status.lastApplied", name), func(ctx context.Context) (bool, error) {
 		got, err := e.dyn.Resource(gvrPortalClusterRule).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
@@ -263,7 +259,6 @@ func applyPortalClusterRule(t *testing.T, name string, spec map[string]any) {
 		_, ok, _ := unstructured.NestedString(got.Object, "status", "lastApplied")
 		return ok, nil
 	})
-	time.Sleep(1 * time.Second)
 }
 
 // waitForRuleAbsent polls the apiserver until the named PortalClusterRule is
@@ -877,7 +872,7 @@ func TestHAFailClosed(t *testing.T) {
 		t.Fatalf("scale: %v\n%s", err, b)
 	}
 	t.Cleanup(func() {
-		c := exec.Command("kubectl", "-n", e.portalNs, "scale", "deployment/portal", "--replicas=2")
+		c := exec.Command("kubectl", "-n", e.portalNs, "scale", "deployment/portal", "--replicas=1")
 		c.Env = append(os.Environ(), "KUBECONFIG="+e.kubeconfig)
 		_ = c.Run()
 	})
@@ -970,7 +965,7 @@ data: {ok: "yes"}
 	// Scale back up AND wait for the deployment to be Available — otherwise
 	// the next subtest hits "connection refused" on the webhook because
 	// Portal isn't serving yet.
-	restore := exec.Command("kubectl", "-n", e.portalNs, "scale", "deployment/portal", "--replicas=2")
+	restore := exec.Command("kubectl", "-n", e.portalNs, "scale", "deployment/portal", "--replicas=1")
 	restore.Env = append(os.Environ(), "KUBECONFIG="+e.kubeconfig)
 	_ = restore.Run()
 	if err := waitForDeploymentReady(context.Background(), e.clientset, e.portalNs, "portal"); err != nil {

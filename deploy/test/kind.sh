@@ -136,6 +136,8 @@ helm upgrade --install portal "${REPO_ROOT}/deploy/helm/portal" \
   --set rbac.actions.evict=true \
   --set rbac.actions.patchnp=true \
   --set rbac.actions.revoketoken=true \
+  --set replicaCount=1 \
+  --set podDisruptionBudget.minAvailable=0 \
   --set alertmanager.url=http://alertmanager-receiver.portal-e2e.svc:9093/api/v2/alerts \
   --wait --timeout 2m
 
