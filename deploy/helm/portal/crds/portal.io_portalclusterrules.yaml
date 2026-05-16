@@ -1,142 +1,163 @@
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.3
   name: portalclusterrules.portal.io
 spec:
   group: portal.io
-  scope: Cluster
   names:
     kind: PortalClusterRule
     listKind: PortalClusterRuleList
     plural: portalclusterrules
-    singular: portalclusterrule
     shortNames:
-      - pcr
-    categories:
-      - portal
+    - pcr
+    singular: portalclusterrule
+  scope: Cluster
   versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Name
-          type: string
-          jsonPath: .spec.name
-        - name: Severity
-          type: string
-          jsonPath: .spec.severity
-        - name: Enabled
-          type: boolean
-          jsonPath: .spec.enabled
-        - name: Age
-          type: date
-          jsonPath: .metadata.creationTimestamp
-      schema:
-        openAPIV3Schema:
-          type: object
-          required:
-            - spec
-          properties:
-            apiVersion:
-              type: string
-            kind:
-              type: string
-            metadata:
-              type: object
-            spec:
-              type: object
-              required:
-                - name
-                - enabled
-                - match
-                - rule
-              properties:
-                name:
-                  type: string
-                  minLength: 1
-                enabled:
-                  type: boolean
-                severity:
-                  type: string
-                  enum: [info, low, medium, high, critical]
-                mode:
-                  type: array
-                  items:
-                    type: string
-                    enum: [admission, audit, runtime]
-                enforcementAction:
-                  type: string
-                  enum: [deny, warn, dryrun]
-                match:
-                  type: object
-                  required:
-                    - gvk
+  - name: crd
+    schema:
+      openAPIV3Schema:
+        description: PortalClusterRule is the cluster-scoped form of a Portal rule.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              RuleSpec mirrors api.Rule's serialisable fields (everything except Source,
+              which is engine-internal). Re-declared verbatim so kubebuilder markers can
+              be attached without embedding api.Rule.
+            properties:
+              actions:
+                items:
+                  description: ActionSpec mirrors api.ActionSpec for CR storage.
                   properties:
-                    gvk:
-                      type: array
+                    "on":
                       items:
-                        type: object
-                        required:
-                          - version
-                          - kind
-                        properties:
-                          group:
-                            type: string
-                          version:
-                            type: string
-                          kind:
-                            type: string
-                    namespaces:
-                      type: object
-                      properties:
-                        include:
-                          type: array
-                          items:
-                            type: string
-                        exclude:
-                          type: array
-                          items:
-                            type: string
-                rule:
-                  type: string
-                  minLength: 1
-                alert:
-                  type: string
-                actions:
-                  type: array
-                  items:
-                    type: object
-                    required:
-                      - type
-                    properties:
-                      type:
                         type: string
-                      on:
-                        type: array
+                      type: array
+                    params:
+                      description: |-
+                        Params is a free-form action parameter bag. Stored as opaque JSON in
+                        the CR via runtime.RawExtension so kubebuilder can DeepCopy it; the
+                        reconciler unmarshals Raw into api.ActionSpec.Params (map[string]any)
+                        at conversion time.
+                      x-kubernetes-preserve-unknown-fields: true
+                    rateLimit:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - type
+                  type: object
+                type: array
+              alert:
+                type: string
+              enabled:
+                type: boolean
+              enforcementAction:
+                enum:
+                - deny
+                - warn
+                - dryrun
+                type: string
+              match:
+                description: Matcher mirrors api.Matcher for CR storage.
+                properties:
+                  gvk:
+                    items:
+                      description: |-
+                        RuleGVK is the marshalled shape of a single GroupVersionKind match entry.
+                        We re-declare it here (rather than reuse schema.GroupVersionKind) because
+                        kubebuilder markers don't transit through external types.
+                      properties:
+                        group:
+                          type: string
+                        kind:
+                          type: string
+                        version:
+                          type: string
+                      required:
+                      - group
+                      - kind
+                      - version
+                      type: object
+                    type: array
+                  namespaces:
+                    description: NamespaceSelector mirrors api.NamespaceSelector for
+                      CR storage.
+                    properties:
+                      exclude:
                         items:
                           type: string
-                      rateLimit:
-                        type: string
-                      params:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
-            status:
-              type: object
-              properties:
-                evalCount:
-                  type: integer
-                  format: int64
-                violationCount:
-                  type: integer
-                  format: int64
-                lastApplied:
+                        type: array
+                      include:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                required:
+                - gvk
+                type: object
+              mode:
+                items:
                   type: string
-                  format: date-time
-                parseError:
+                type: array
+              name:
+                type: string
+              rule:
+                type: string
+              severity:
+                enum:
+                - info
+                - low
+                - medium
+                - high
+                - critical
+                type: string
+            required:
+            - enabled
+            - match
+            - name
+            - rule
+            type: object
+          status:
+            description: RuleStatus is the .status sub-resource shared by both CRDs.
+            properties:
+              activeOn:
+                items:
                   type: string
-                activeOn:
-                  type: array
-                  items:
-                    type: string
+                type: array
+              evalCount:
+                format: int64
+                type: integer
+              lastApplied:
+                format: date-time
+                type: string
+              parseError:
+                type: string
+              violationCount:
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

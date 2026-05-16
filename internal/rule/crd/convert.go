@@ -1,7 +1,10 @@
 package crd
 
 import (
+	"encoding/json"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/vilaca/portal/internal/api"
@@ -36,6 +39,20 @@ func PortalRuleSpecToRule(spec PortalRuleSpec, meta metav1.ObjectMeta) api.Rule 
 	return r
 }
 
+// rawToMap unmarshals a *runtime.RawExtension into a map[string]any. Returns
+// nil when the raw payload is empty or malformed — actions that need a value
+// will surface the absence via api.Action.Execute's own validation.
+func rawToMap(r *runtime.RawExtension) map[string]any {
+	if r == nil || len(r.Raw) == 0 {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(r.Raw, &m); err != nil {
+		return nil
+	}
+	return m
+}
+
 // specToRule does the field-for-field copy. Source is filled in by callers.
 func specToRule(spec RuleSpec) api.Rule {
 	gvks := make([]schema.GroupVersionKind, 0, len(spec.Match.GVK))
@@ -58,7 +75,7 @@ func specToRule(spec RuleSpec) api.Rule {
 			Type:      a.Type,
 			On:        on,
 			RateLimit: a.RateLimit,
-			Params:    a.Params,
+			Params:    rawToMap(a.Params),
 		})
 	}
 

@@ -33,6 +33,8 @@ import (
 
 // ParseErrorSource is the surface this reconciler asks for parse errors.
 // The engine's *dispatcher type satisfies it.
+//
+// +kubebuilder:object:generate=false
 type ParseErrorSource interface {
 	ParseError(rule string) string
 }
@@ -41,6 +43,7 @@ type ParseErrorSource interface {
 
 var counters sync.Map // rule name -> *ruleCounters
 
+// +kubebuilder:object:generate=false
 type ruleCounters struct {
 	eval       atomic.Int64
 	violations atomic.Int64
@@ -88,6 +91,8 @@ func ResetCounters() {
 // --- reconciler ---------------------------------------------------------
 
 // Reconciler updates .status on PortalClusterRule / PortalRule.
+//
+// +kubebuilder:object:generate=false
 type Reconciler struct {
 	Client client.Client
 	Engine ParseErrorSource

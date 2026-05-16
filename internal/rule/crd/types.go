@@ -2,6 +2,7 @@ package crd
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // RuleGVK is the marshalled shape of a single GroupVersionKind match entry.
@@ -35,12 +36,14 @@ type ActionSpec struct {
 	On []string `json:"on,omitempty"`
 	// +optional
 	RateLimit string `json:"rateLimit,omitempty"`
-	// Params is a free-form action parameter bag. Stored as opaque JSON in the
-	// CR; converted to api.ActionSpec.Params (map[string]any) at runtime.
+	// Params is a free-form action parameter bag. Stored as opaque JSON in
+	// the CR via runtime.RawExtension so kubebuilder can DeepCopy it; the
+	// reconciler unmarshals Raw into api.ActionSpec.Params (map[string]any)
+	// at conversion time.
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +kubebuilder:validation:Schemaless
-	Params map[string]any `json:"params,omitempty"`
+	Params *runtime.RawExtension `json:"params,omitempty"`
 }
 
 // RuleSpec mirrors api.Rule's serialisable fields (everything except Source,

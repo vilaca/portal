@@ -26,7 +26,7 @@ tidy:
 lint: vet
 
 tools:
-	$(GO) install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.15.0
+	$(GO) install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.17.3
 	$(GO) install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.13.1
 	$(GO) install github.com/princjef/gomarkdoc/cmd/gomarkdoc@v1.1.0
 
@@ -35,6 +35,8 @@ generate: generate-crds generate-docs
 generate-crds:
 	$(CONTROLLER_GEN) crd paths=./internal/rule/crd/... output:crd:dir=deploy/crds
 	$(CONTROLLER_GEN) object paths=./internal/rule/crd/...
+	cp deploy/crds/portal.io_portalclusterrules.yaml deploy/helm/portal/crds/portal.io_portalclusterrules.yaml
+	cp deploy/crds/portal.io_portalrules.yaml deploy/helm/portal/crds/portal.io_portalrules.yaml
 
 generate-docs:
 	$(GO) run ./internal/sink/prometheus/cmd/metricsdoc > docs/reference/metrics.md

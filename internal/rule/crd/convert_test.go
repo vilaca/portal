@@ -5,11 +5,15 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/vilaca/portal/internal/api"
 )
+
+// raw is a tiny helper that wraps a JSON object literal as a *runtime.RawExtension.
+func raw(s string) *runtime.RawExtension { return &runtime.RawExtension{Raw: []byte(s)} }
 
 func TestPortalClusterRuleSpecToRule(t *testing.T) {
 	spec := RuleSpec{
@@ -28,8 +32,8 @@ func TestPortalClusterRuleSpecToRule(t *testing.T) {
 		Expression: "container.securityContext.privileged == true",
 		Alert:      "insecure-workload",
 		Actions: []ActionSpec{
-			{Type: "alertmanager", Params: map[string]any{"template": "insecure-workload"}},
-			{Type: "label", On: []string{"audit"}, RateLimit: "5/min", Params: map[string]any{"key": "portal.security/quarantine", "value": "true"}},
+			{Type: "alertmanager", Params: raw(`{"template":"insecure-workload"}`)},
+			{Type: "label", On: []string{"audit"}, RateLimit: "5/min", Params: raw(`{"key":"portal.security/quarantine","value":"true"}`)},
 		},
 	}
 	meta := metav1.ObjectMeta{Name: "privileged", UID: types.UID("uid-123")}
