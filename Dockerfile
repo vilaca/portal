@@ -5,7 +5,7 @@
 # from the repo root; release.yml passes --build-arg VERSION=$tag so the
 # binary's --version is wired to the git tag.
 
-ARG GO_VERSION=1.22
+ARG GO_VERSION=1.26
 ARG DISTROLESS=gcr.io/distroless/static:nonroot
 
 FROM golang:${GO_VERSION} AS builder

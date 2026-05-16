@@ -16,13 +16,18 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	"github.com/vilaca/portal/internal/api"
 )
 
 // New constructs a RuleEngine by compiling every rule in idx and indexing the
 // result by GVK. A nil idx or nil eng is a programming error.
+//
+// The engine reads from idx on every Evaluate call (rather than snapshotting
+// at construction) so dynamic rule sources — the CR loader, the folder
+// watcher — pick up changes without re-instantiating the engine. Compiled
+// expressions are cached by expression text in compiledByExpr to amortise
+// per-request compile cost. Eviction is implicit: any rule whose expression
+// disappears from the index simply stops being looked up.
 func New(idx api.RuleIndex, eng api.ExpressionEngine) (api.RuleEngine, error) {
 	if idx == nil {
 		return nil, fmt.Errorf("engine.New: nil RuleIndex")
@@ -30,31 +35,26 @@ func New(idx api.RuleIndex, eng api.ExpressionEngine) (api.RuleEngine, error) {
 	if eng == nil {
 		return nil, fmt.Errorf("engine.New: nil ExpressionEngine")
 	}
-	d := &dispatcher{
-		byGVK: map[schema.GroupVersionKind][]compiledRule{},
-	}
+	d := &dispatcher{idx: idx, eng: eng}
+	// Eagerly pre-compile every rule that's in the index at construction
+	// so callers see compile errors immediately via ParseError /
+	// CompileErrors. New rules added to the index later compile lazily on
+	// first Evaluate, also recording any errors at that point.
 	for _, r := range idx.All() {
-		prog, err := eng.Compile(r.Expression)
-		if err != nil {
-			d.compileErrors.Store(r.Name, err.Error())
-			continue
-		}
-		cr := compiledRule{rule: r, prog: prog}
-		for _, gvk := range r.Match.GVK {
-			d.byGVK[gvk] = append(d.byGVK[gvk], cr)
+		if _, err := d.programFor(r); err != nil {
+			// programFor already stored the error.
+			_ = err
 		}
 	}
 	return d, nil
 }
 
-type compiledRule struct {
-	rule api.Rule
-	prog api.Program
-}
-
 type dispatcher struct {
-	byGVK         map[schema.GroupVersionKind][]compiledRule
-	compileErrors sync.Map // rule name -> error string
+	idx api.RuleIndex
+	eng api.ExpressionEngine
+
+	compileErrors  sync.Map // rule name -> error string
+	compiledByExpr sync.Map // expression text -> api.Program
 }
 
 // ParseError returns the compile error message for rule, or "" if the rule
@@ -83,7 +83,7 @@ func (d *dispatcher) CompileErrors() map[string]string {
 // recorded under the same compileErrors map (prefix "eval:") so test code can
 // observe it.
 func (d *dispatcher) Evaluate(ctx api.Context, meta api.EventMeta) []api.Violation {
-	rules := d.byGVK[ctx.GVK]
+	rules := d.idx.ForGVK(ctx.GVK)
 	if len(rules) == 0 {
 		return nil
 	}
@@ -92,21 +92,46 @@ func (d *dispatcher) Evaluate(ctx api.Context, meta api.EventMeta) []api.Violati
 	container := containerNameFromEnv(ctx.Env)
 
 	out := make([]api.Violation, 0, len(rules))
-	for _, cr := range rules {
-		if !namespaceAllowed(cr.rule.Match.Namespaces, ns) {
+	for _, r := range rules {
+		if !namespaceAllowed(r.Match.Namespaces, ns) {
 			continue
 		}
-		ok, err := cr.prog.Eval(ctx)
+		prog, err := d.programFor(r)
 		if err != nil {
-			d.compileErrors.Store(cr.rule.Name, "eval: "+err.Error())
+			// Compile error already recorded in programFor; skip rule.
+			continue
+		}
+		ok, err := prog.Eval(ctx)
+		if err != nil {
+			d.compileErrors.Store(r.Name, "eval: "+err.Error())
 			continue
 		}
 		if !ok {
 			continue
 		}
-		out = append(out, buildViolation(cr.rule, ctx, meta, mode, ns, name, container))
+		out = append(out, buildViolation(r, ctx, meta, mode, ns, name, container))
 	}
 	return out
+}
+
+// programFor returns a cached or freshly-compiled api.Program for r's
+// expression. Compile errors are recorded under r.Name so the CRD status
+// reconciler can surface them.
+func (d *dispatcher) programFor(r api.Rule) (api.Program, error) {
+	if cached, ok := d.compiledByExpr.Load(r.Expression); ok {
+		// Clear any prior compile error if the rule now points at a
+		// previously-good expression.
+		d.compileErrors.Delete(r.Name)
+		return cached.(api.Program), nil
+	}
+	prog, err := d.eng.Compile(r.Expression)
+	if err != nil {
+		d.compileErrors.Store(r.Name, err.Error())
+		return nil, err
+	}
+	d.compiledByExpr.Store(r.Expression, prog)
+	d.compileErrors.Delete(r.Name)
+	return prog, nil
 }
 
 func buildViolation(

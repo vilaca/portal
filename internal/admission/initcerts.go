@@ -167,13 +167,16 @@ func upsertSecret(ctx context.Context, kube kubernetes.Interface, ns, name strin
 		return err
 	}
 	if err == nil {
+		// Only mutate Data — Secret.Type is immutable after creation. The
+		// chart's bootstrap placeholder is Opaque; we leave it that way.
+		// kubelet projects Data into the volume identically regardless of
+		// type.
 		existing.Data = payload
-		// Type may already be set (helm.sh/resource-policy:keep Secret) or
-		// not (CRUD recreate). Either way, force tls so kubelet validates.
-		existing.Type = corev1.SecretTypeTLS
 		_, err = kube.CoreV1().Secrets(ns).Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	}
+	// Fresh-create path: use kubernetes.io/tls so kubectl + tooling
+	// recognise the Secret correctly.
 	_, err = kube.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 		Type:       corev1.SecretTypeTLS,

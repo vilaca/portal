@@ -5,7 +5,7 @@
 //
 // +kubebuilder:object:generate=true
 // +groupName=portal.io
-package crd
+package v1alpha1
 
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"

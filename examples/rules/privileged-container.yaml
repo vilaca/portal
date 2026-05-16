@@ -13,4 +13,6 @@ rule: >
   || container.securityContext.allowPrivilegeEscalation == true
 alert: insecure-workload
 actions:
-  - {type: alertmanager, template: insecure-workload}
+  - type: alertmanager
+    params:
+      template: insecure-workload

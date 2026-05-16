@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/vilaca/portal/internal/api"
-	"github.com/vilaca/portal/internal/rule/crd"
+	crd "github.com/vilaca/portal/internal/rule/v1alpha1"
 )
 
 // cr is the controller-runtime-backed RuleLoader.

@@ -1,8 +1,8 @@
 # Receiver fixture image. Built and loaded into the e2e kind cluster by
 # deploy/test/kind.sh; nothing in production depends on this.
-FROM golang:1.22 AS builder
+FROM golang:1.26 AS builder
 WORKDIR /src
-COPY main.go ./
+COPY go.mod main.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/receiver ./...
 
 FROM gcr.io/distroless/static:nonroot

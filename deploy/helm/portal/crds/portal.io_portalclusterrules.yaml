@@ -16,7 +16,7 @@ spec:
     singular: portalclusterrule
   scope: Cluster
   versions:
-  - name: crd
+  - name: v1alpha1
     schema:
       openAPIV3Schema:
         description: PortalClusterRule is the cluster-scoped form of a Portal rule.

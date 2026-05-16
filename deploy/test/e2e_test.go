@@ -69,6 +69,11 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "[e2e] cannot build rest config from %q: %v\n", kubeconfig, err)
 		os.Exit(1)
 	}
+	// Default client-go QPS/Burst (5/10) saturates fast when the suite
+	// fires bursts of kubectl/dynamic-client traffic. Bump both so tests
+	// don't silently fail with "client rate limiter Wait returned an error".
+	cfg.QPS = 100
+	cfg.Burst = 200
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[e2e] kubernetes.NewForConfig: %v\n", err)
@@ -215,6 +220,12 @@ var (
 // caller is responsible for registering a cleanup.
 func applyPortalClusterRule(t *testing.T, name string, spec map[string]any) {
 	t.Helper()
+	// spec.name is required by the CRD schema. The test API mirrors the
+	// convenience pattern where callers pass metadata.name once; we
+	// duplicate it into spec.name unless the caller explicitly overrode.
+	if _, ok := spec["name"]; !ok {
+		spec["name"] = name
+	}
 	obj := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "portal.io/v1alpha1",
 		"kind":       "PortalClusterRule",
@@ -230,6 +241,19 @@ func applyPortalClusterRule(t *testing.T, name string, spec map[string]any) {
 	t.Cleanup(func() {
 		bg := context.Background()
 		_ = e.dyn.Resource(gvrPortalClusterRule).Delete(bg, name, metav1.DeleteOptions{})
+	})
+	// Wait until the CRD's status reconciler has written .status.lastApplied
+	// — at that point the rule is loaded into the engine's index and the
+	// admission webhook will see it on the next request. Without this gate
+	// every test that creates a rule then immediately fires an admission
+	// request races the reconciler.
+	eventuallyMsg(t, 30*time.Second, fmt.Sprintf("rule %q never reached status.lastApplied", name), func(ctx context.Context) (bool, error) {
+		got, err := e.dyn.Resource(gvrPortalClusterRule).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return false, nil
+		}
+		_, ok, _ := unstructured.NestedString(got.Object, "status", "lastApplied")
+		return ok, nil
 	})
 }
 
@@ -257,22 +281,21 @@ func kubectlApply(t *testing.T, manifest string) (string, error) {
 // match `prefix`. The caller validates monotonicity.
 func scrapeMetric(t *testing.T, prefix string) float64 {
 	t.Helper()
-	// Use kubectl exec rather than port-forward to avoid flakey TCP races.
-	pods, err := e.clientset.CoreV1().Pods(e.portalNs).List(context.Background(), metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/name=portal",
-	})
-	if err != nil || len(pods.Items) == 0 {
-		t.Fatalf("list portal pods: %v (got %d)", err, len(pods.Items))
-	}
-	podName := pods.Items[0].Name
-	cmd := exec.Command("kubectl", "-n", e.portalNs, "exec", podName, "--",
-		"wget", "-qO-", "http://127.0.0.1:8080/metrics")
-	cmd.Env = append(os.Environ(), "KUBECONFIG="+e.kubeconfig)
-	out, err := cmd.CombinedOutput()
+	// Scrape via the apiserver service proxy — works from outside the
+	// cluster, doesn't depend on busybox-style tools in the container
+	// image (distroless has no wget/curl), and skips port-forward TCP
+	// races. The Service exposes port "metrics" in the install namespace.
+	body, err := e.clientset.CoreV1().RESTClient().Get().
+		Namespace(e.portalNs).
+		Resource("services").
+		Name("portal:metrics").
+		SubResource("proxy").
+		Suffix("/metrics").
+		DoRaw(context.Background())
 	if err != nil {
-		t.Fatalf("metrics scrape: %v\n%s", err, out)
+		t.Fatalf("metrics scrape: %v", err)
 	}
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(string(body), "\n") {
 		if strings.HasPrefix(line, "#") || line == "" {
 			continue
 		}
@@ -313,7 +336,7 @@ func TestRuleMigrationCompileLoop(t *testing.T) {
 	outDir := t.TempDir()
 	cmd := exec.Command(bin, "migrate-rules",
 		filepath.Join(e.repoRoot, "examples/rules"),
-		"--format=cr", "--out", outDir)
+		"--format=cr", "--output", outDir)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("migrate-rules: %v\n%s", err, b)
 	}
@@ -578,7 +601,11 @@ func TestActions(t *testing.T) {
 		},
 		"rule": "metadata.labels?.bad == 'yes'",
 		"actions": []any{
-			map[string]any{"type": "label", "key": "portal.security/quarantine", "value": "true", "on": []any{"audit"}},
+			map[string]any{
+				"type":   "label",
+				"on":     []any{"audit"},
+				"params": map[string]any{"key": "portal.security/quarantine", "value": "true"},
+			},
 			map[string]any{"type": "evict", "on": []any{"audit"}, "rateLimit": "5/min"},
 		},
 	})
@@ -890,10 +917,15 @@ data: {ok: "yes"}
 	cleanup.Env = append(os.Environ(), "KUBECONFIG="+e.kubeconfig)
 	_ = cleanup.Run()
 
-	// Scale back up so subsequent tests aren't poisoned.
+	// Scale back up AND wait for the deployment to be Available — otherwise
+	// the next subtest hits "connection refused" on the webhook because
+	// Portal isn't serving yet.
 	restore := exec.Command("kubectl", "-n", e.portalNs, "scale", "deployment/portal", "--replicas=2")
 	restore.Env = append(os.Environ(), "KUBECONFIG="+e.kubeconfig)
 	_ = restore.Run()
+	if err := waitForDeploymentReady(context.Background(), e.clientset, e.portalNs, "portal"); err != nil {
+		t.Fatalf("portal did not return to Ready after scale-back: %v", err)
+	}
 }
 
 // -----------------------------------------------------------------------------

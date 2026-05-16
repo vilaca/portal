@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/vilaca/portal/internal/api"
-	"github.com/vilaca/portal/internal/rule/crd"
+	crd "github.com/vilaca/portal/internal/rule/v1alpha1"
 )
 
 func newScheme(t *testing.T) *runtime.Scheme {

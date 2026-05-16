@@ -16,7 +16,7 @@ spec:
     singular: portalrule
   scope: Namespaced
   versions:
-  - name: crd
+  - name: v1alpha1
     schema:
       openAPIV3Schema:
         description: PortalRule is the namespaced form of a Portal rule.

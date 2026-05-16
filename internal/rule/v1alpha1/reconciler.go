@@ -16,7 +16,7 @@
 // own status writer in internal/audit; this reconciler is unrate-limited
 // because controller-runtime backs the kinds with exponential backoff.
 
-package crd
+package v1alpha1
 
 import (
 	"context"

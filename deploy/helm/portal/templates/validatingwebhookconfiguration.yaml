@@ -10,7 +10,7 @@ metadata:
     cert-manager.io/inject-ca-from: {{ printf "%s/%s" .Release.Namespace (include "portal.fullname" .) | quote }}
   {{- end }}
 webhooks:
-  - name: portal.io
+  - name: validate.portal.io
     admissionReviewVersions: ["v1"]
     sideEffects: None
     matchPolicy: Equivalent

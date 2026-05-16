@@ -33,8 +33,8 @@ tools:
 generate: generate-crds generate-docs
 
 generate-crds:
-	$(CONTROLLER_GEN) crd paths=./internal/rule/crd/... output:crd:dir=deploy/crds
-	$(CONTROLLER_GEN) object paths=./internal/rule/crd/...
+	$(CONTROLLER_GEN) crd paths=./internal/rule/v1alpha1/... output:crd:dir=deploy/crds
+	$(CONTROLLER_GEN) object paths=./internal/rule/v1alpha1/...
 	cp deploy/crds/portal.io_portalclusterrules.yaml deploy/helm/portal/crds/portal.io_portalclusterrules.yaml
 	cp deploy/crds/portal.io_portalrules.yaml deploy/helm/portal/crds/portal.io_portalrules.yaml
 

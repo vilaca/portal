@@ -14,7 +14,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
@@ -22,6 +24,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
+	ctrlmanager "sigs.k8s.io/controller-runtime/pkg/manager"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/vilaca/portal/internal/actions/annotate"
 	"github.com/vilaca/portal/internal/actions/engine"
@@ -40,6 +44,7 @@ import (
 	"github.com/vilaca/portal/internal/network"
 	"github.com/vilaca/portal/internal/rule"
 	"github.com/vilaca/portal/internal/rule/loader"
+	portalv1alpha1 "github.com/vilaca/portal/internal/rule/v1alpha1"
 	"github.com/vilaca/portal/internal/sink/alertmanager"
 	"github.com/vilaca/portal/internal/sink/policyreport"
 	prommetrics "github.com/vilaca/portal/internal/sink/prometheus"
@@ -143,15 +148,59 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 			return fmt.Errorf("folder loader: %w", err)
 		}
 	}
-	if opts.rulesCR {
-		log.Info("--rules-cr is honoured by the audit controller's reconciler; ensure --audit is enabled to ingest CRs")
-	}
+	// (CR loader is wired below, after the rule engine exists — the
+	// reconciler needs the engine's ParseError accessor.)
 
 	// 6. Expression engine + rule engine.
 	expr := exprlang.New()
 	ruleEng, err := ruleengine.New(idx, expr)
 	if err != nil {
 		return fmt.Errorf("rule engine: %w", err)
+	}
+
+	// 6a. CR loader — builds a controller-runtime Manager that reconciles
+	// PortalClusterRule / PortalRule and pushes each snapshot into the
+	// shared rule index. The same Manager also runs the status reconciler
+	// that writes .status.parseError + .status.activeOn. Disabled when
+	// --rules-cr is false (rules.cr Helm value).
+	var crManager ctrlmanager.Manager
+	if opts.rulesCR {
+		parseSrc, ok := ruleEng.(portalv1alpha1.ParseErrorSource)
+		if !ok {
+			return errors.New("rule engine does not expose ParseError(name) — wire-up cannot reach the status reconciler")
+		}
+		scheme := runtime.NewScheme()
+		if err := clientgoscheme.AddToScheme(scheme); err != nil {
+			return fmt.Errorf("clientgo scheme: %w", err)
+		}
+		if err := portalv1alpha1.AddToScheme(scheme); err != nil {
+			return fmt.Errorf("portal scheme: %w", err)
+		}
+		mgr, err := ctrlmanager.New(restCfg, ctrlmanager.Options{
+			Scheme: scheme,
+			// Disable the manager's own metrics endpoint — Portal serves
+			// metrics from prommetrics on opts.metricsAddr.
+			Metrics: ctrlmetrics.Options{BindAddress: "0"},
+			// No leader election here; the audit controller owns that
+			// concern. CR reconciliation is idempotent across replicas.
+			LeaderElection: false,
+		})
+		if err != nil {
+			return fmt.Errorf("controller-runtime manager: %w", err)
+		}
+		rr := audit.NewRuleReconciler(mgr.GetClient(), idx, parseSrc)
+		if err := rr.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("rule reconciler: %w", err)
+		}
+		// Note: the v1alpha1.SetupWithManager status reconciler is
+		// deliberately NOT registered here. It would race the audit
+		// reconciler — both write status, and v1alpha1's write doesn't
+		// imply the index update has happened. Consumers (the e2e test,
+		// `kubectl get portalclusterrule`) use status.lastApplied as the
+		// "rule is live in the engine" signal, so the audit reconciler is
+		// the sole writer.
+		_ = portalv1alpha1.SetupWithManager // keep the symbol referenced
+		crManager = mgr
 	}
 
 	// 7. Action dispatcher.
@@ -264,6 +313,16 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 			shutdownCtx, c := context.WithTimeout(context.Background(), 10*time.Second)
 			defer c()
 			return s.Stop(shutdownCtx)
+		})
+	}
+
+	if crManager != nil {
+		g.Go(func() error {
+			log.Info("controller-runtime manager starting", "for", "PortalClusterRule/PortalRule")
+			if err := crManager.Start(gctx); err != nil && !errors.Is(err, context.Canceled) {
+				return fmt.Errorf("cr manager: %w", err)
+			}
+			return nil
 		})
 	}
 
