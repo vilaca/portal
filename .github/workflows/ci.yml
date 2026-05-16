@@ -79,13 +79,12 @@ jobs:
         run: go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.17.3
 
       - name: Install helm-docs
-        run: |
-          HELM_DOCS_VERSION=1.13.1
-          curl -fsSL -o /tmp/helm-docs.tgz \
-            "https://github.com/norwoodj/helm-docs/releases/download/v${HELM_DOCS_VERSION}/helm-docs_${HELM_DOCS_VERSION}_Linux_x86_64.tar.gz"
-          mkdir -p /tmp/helm-docs
-          tar -xzf /tmp/helm-docs.tgz -C /tmp/helm-docs
-          sudo install /tmp/helm-docs/helm-docs /usr/local/bin/helm-docs
+        # `go install` matches the Makefile's `tools` target — keeps CI and
+        # local output byte-identical. The pre-built release tarball ships
+        # with a different template that adds a footer the `go install`
+        # build doesn't emit; using the same install method here means the
+        # drift check doesn't flag binary-build differences as real drift.
+        run: go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.13.1
 
       - name: Run docs generators
         run: make generate-docs
