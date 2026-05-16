@@ -299,19 +299,29 @@ func kubectlApply(t *testing.T, manifest string) (string, error) {
 // scrapeMetric reads the Portal /metrics endpoint via a port-forwarded
 // kubectl proxy. Returns the value of the first sample whose name+labels
 // match `prefix`. The caller validates monotonicity.
+//
+// Retries up to ~5 s — the apiserver Service proxy load-balances across
+// the Service's backing pods and during scale events one of those pods
+// may briefly be unready (kubelet returns 503 "the server is currently
+// unable to handle the request" for those). The metric value itself is
+// monotonic so retrying is safe.
 func scrapeMetric(t *testing.T, prefix string) float64 {
 	t.Helper()
-	// Scrape via the apiserver service proxy — works from outside the
-	// cluster, doesn't depend on busybox-style tools in the container
-	// image (distroless has no wget/curl), and skips port-forward TCP
-	// races. The Service exposes port "metrics" in the install namespace.
-	body, err := e.clientset.CoreV1().RESTClient().Get().
-		Namespace(e.portalNs).
-		Resource("services").
-		Name("portal:metrics").
-		SubResource("proxy").
-		Suffix("/metrics").
-		DoRaw(context.Background())
+	var body []byte
+	var err error
+	for attempt := 0; attempt < 10; attempt++ {
+		body, err = e.clientset.CoreV1().RESTClient().Get().
+			Namespace(e.portalNs).
+			Resource("services").
+			Name("portal:metrics").
+			SubResource("proxy").
+			Suffix("/metrics").
+			DoRaw(context.Background())
+		if err == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 	if err != nil {
 		t.Fatalf("metrics scrape: %v", err)
 	}
