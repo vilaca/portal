@@ -1,12 +1,12 @@
 # Expression language
 
-Portal's default expression engine is [`expr-lang/expr`](https://github.com/expr-lang/expr) via [`internal/expr/exprlang`](../../internal/expr/exprlang/engine.go). The engine compiles each `rule:` expression once at load time and re-runs the compiled program per evaluation.
+Portal's default expression engine is [`expr-lang/expr`](https://github.com/expr-lang/expr) via [`internal/expr/exprlang`](https://github.com/vilaca/portal/blob/main/internal/expr/exprlang/engine.go). The engine compiles each `rule:` expression once at load time and re-runs the compiled program per evaluation.
 
 The engine interface is pluggable (`api.ExpressionEngine`) — CEL/Rego/starlark are drop-in candidates for v3 without changing the rule schema.
 
 ## Bound env
 
-The env keys exposed by the pod ContextBuilder ([`internal/context/pod/builder.go`](../../internal/context/pod/builder.go)) are:
+The env keys exposed by the pod ContextBuilder ([`internal/context/pod/builder.go`](https://github.com/vilaca/portal/blob/main/internal/context/pod/builder.go)) are:
 
 | Key | When | Type |
 |-----|------|------|
@@ -39,7 +39,7 @@ Detailed coverage of the pod-sugar fields is in [../concepts/context-and-pod-sug
 |--------|-----------|-------|
 | `regexMatch` | `regexMatch(s, pattern string) bool` | Function-form alternative to the `matches` operator for when the operator form is awkward (e.g. dynamic pattern). Pattern cache is global. |
 
-The helper is registered in [`internal/expr/exprlang/engine.go`](../../internal/expr/exprlang/engine.go).
+The helper is registered in [`internal/expr/exprlang/engine.go`](https://github.com/vilaca/portal/blob/main/internal/expr/exprlang/engine.go).
 
 ## Result contract
 

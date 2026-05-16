@@ -1,6 +1,6 @@
 # `PortalClusterRule`
 
-> Normally regenerated from the CRD OpenAPI schema (`crd-ref-docs` or similar). The Go types live in [`internal/rule/v1alpha1/types.go`](../../../internal/rule/v1alpha1/types.go); the YAML CRD is shipped in `deploy/helm/portal/crds/`.
+> Normally regenerated from the CRD OpenAPI schema (`crd-ref-docs` or similar). The Go types live in [`internal/rule/v1alpha1/types.go`](https://github.com/vilaca/portal/blob/main/internal/rule/v1alpha1/types.go); the YAML CRD is shipped in `deploy/helm/portal/crds/`.
 
 Cluster-scoped Portal rule. Short name: `pcr`. Status subresource enabled.
 
@@ -29,7 +29,7 @@ CRD-only metadata:
 
 ## `.status`
 
-Written by the status reconciler in [`internal/rule/v1alpha1/`](../../../internal/rule/v1alpha1/). All fields are optional.
+Written by the status reconciler in [`internal/rule/v1alpha1/`](https://github.com/vilaca/portal/blob/main/internal/rule/v1alpha1/). All fields are optional.
 
 | Field | Type | Meaning |
 |-------|------|---------|

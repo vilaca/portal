@@ -8,7 +8,7 @@ Portal exposes the cluster's informer caches to expr-lang via two namespaces:
 | `cluster.<gvk>.list(ns, selector)` | informer cache | filtered cache walk |
 | `consistentCluster.<gvk>.byName(ns, name)` | direct API call | one round-trip; opt-in |
 
-Implementations live in [`internal/lookup/`](../../internal/lookup/) and are registered into the expr-lang env at engine construction time.
+Implementations live in [`internal/lookup/`](https://github.com/vilaca/portal/blob/main/internal/lookup/) and are registered into the expr-lang env at engine construction time.
 
 `<gvk>` is the lowercase-plural resource name — `cluster.pods.byName(...)`, `cluster.deployments.list(...)`, `cluster.poddisruptionbudgets.list(...)`.
 

@@ -1,6 +1,6 @@
 # Revoke ServiceAccount token on suspicious exec (v2 preview)
 
-> **v2 preview.** The `runtime` mode and the runtime EventSource are not enabled in v1. This entry sketches the intended use of [`internal/actions/revoketoken`](../../internal/actions/revoketoken/action.go) once Portal subscribes to the Kubernetes API audit log. See [POC-TO-PRODUCTION.md §v2 implementation plan (sketch — not in v1)](../POC-TO-PRODUCTION.md#v2-implementation-plan-sketch--not-in-v1).
+> **v2 preview.** The `runtime` mode and the runtime EventSource are not enabled in v1. This entry sketches the intended use of [`internal/actions/revoketoken`](https://github.com/vilaca/portal/blob/main/internal/actions/revoketoken/action.go) once Portal subscribes to the Kubernetes API audit log. See [POC-TO-PRODUCTION.md §v2 implementation plan (sketch — not in v1)](../POC-TO-PRODUCTION.md#v2-implementation-plan-sketch-not-in-v1).
 
 ## Intended manifest
 

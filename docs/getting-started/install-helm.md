@@ -39,7 +39,7 @@ This exclusion is non-negotiable and not driven by a Helm value. The rationale â
 
 ## Most-touched values
 
-Full table: [../reference/helm-values.md](../reference/helm-values.md). Source: [`deploy/helm/portal/values.yaml`](../../deploy/helm/portal/values.yaml).
+Full table: [../reference/helm-values.md](../reference/helm-values.md). Source: [`deploy/helm/portal/values.yaml`](https://github.com/vilaca/portal/blob/main/deploy/helm/portal/values.yaml).
 
 | Value | Default | Effect |
 |-------|---------|--------|

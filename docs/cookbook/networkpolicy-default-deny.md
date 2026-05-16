@@ -1,6 +1,6 @@
 # Detect missing default-deny NetworkPolicy
 
-Portal ships a built-in NetworkPolicy analyser. `np.default-deny-missing` ([`internal/network/checks.go`](../../internal/network/checks.go)) reports any namespace that has pods but no NetworkPolicy selecting them with an empty ingress rule.
+Portal ships a built-in NetworkPolicy analyser. `np.default-deny-missing` ([`internal/network/checks.go`](https://github.com/vilaca/portal/blob/main/internal/network/checks.go)) reports any namespace that has pods but no NetworkPolicy selecting them with an empty ingress rule.
 
 ## Enable the layer
 
@@ -16,7 +16,7 @@ network:
 
 ## What the check does
 
-The check ([`checkDefaultDenyMissing` in `internal/network/checks.go`](../../internal/network/checks.go)) walks each namespace's pod set. For each pod, it asks: is there a `NetworkPolicy` in this namespace whose `podSelector` matches this pod and whose `ingress: []` (i.e. default deny)? If no, the namespace produces a synthetic `Violation` with `rule = "np.default-deny-missing"`. The finding flows through the regular pipeline: PolicyReport entry, AlertManager alert (if configured), `portal_np_findings{check="np.default-deny-missing"}` increment.
+The check ([`checkDefaultDenyMissing` in `internal/network/checks.go`](https://github.com/vilaca/portal/blob/main/internal/network/checks.go)) walks each namespace's pod set. For each pod, it asks: is there a `NetworkPolicy` in this namespace whose `podSelector` matches this pod and whose `ingress: []` (i.e. default deny)? If no, the namespace produces a synthetic `Violation` with `rule = "np.default-deny-missing"`. The finding flows through the regular pipeline: PolicyReport entry, AlertManager alert (if configured), `portal_np_findings{check="np.default-deny-missing"}` increment.
 
 ## Auto-resolve
 
@@ -51,4 +51,4 @@ kubectl apply -f default-deny.yaml
 
 ## Companion checks
 
-The analyser also ships `np.broad-cidr`, `np.unreachable-selector`, and `np.policy-without-targets` ([`internal/network/checks.go`](../../internal/network/checks.go)). All four emit through the same pipeline with `gvk: NetworkPolicy` or `gvk: Namespace`.
+The analyser also ships `np.broad-cidr`, `np.unreachable-selector`, and `np.policy-without-targets` ([`internal/network/checks.go`](https://github.com/vilaca/portal/blob/main/internal/network/checks.go)). All four emit through the same pipeline with `gvk: NetworkPolicy` or `gvk: Namespace`.

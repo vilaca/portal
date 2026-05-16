@@ -1,23 +1,23 @@
 # Actions, idempotency, and rate limiting
 
-Every violation produced by the rule engine flows into the `ActionDispatcher` ([`internal/actions/engine/dispatcher.go`](../../internal/actions/engine/dispatcher.go)) which fans out to the per-type `Action` implementations.
+Every violation produced by the rule engine flows into the `ActionDispatcher` ([`internal/actions/engine/dispatcher.go`](https://github.com/vilaca/portal/blob/main/internal/actions/engine/dispatcher.go)) which fans out to the per-type `Action` implementations.
 
 ## Built-in actions
 
 | Type | Package | Idempotent | Default rate limit |
 |------|---------|------------|--------------------|
-| `alertmanager` | [`internal/actions/alertmanager_action`](../../internal/actions/alertmanager_action/action.go) | yes | 5m |
-| `label` | [`internal/actions/label`](../../internal/actions/label/action.go) | yes | 5s |
-| `annotate` | [`internal/actions/annotate`](../../internal/actions/annotate/action.go) | yes | 5s |
-| `evict` | [`internal/actions/evict`](../../internal/actions/evict/action.go) | no | 30s |
-| `patch-networkpolicy` | [`internal/actions/patchnp`](../../internal/actions/patchnp/action.go) | yes | 30s |
-| `revoke-sa-token` | [`internal/actions/revoketoken`](../../internal/actions/revoketoken/action.go) | no | 60s |
+| `alertmanager` | [`internal/actions/alertmanager_action`](https://github.com/vilaca/portal/blob/main/internal/actions/alertmanager_action/action.go) | yes | 5m |
+| `label` | [`internal/actions/label`](https://github.com/vilaca/portal/blob/main/internal/actions/label/action.go) | yes | 5s |
+| `annotate` | [`internal/actions/annotate`](https://github.com/vilaca/portal/blob/main/internal/actions/annotate/action.go) | yes | 5s |
+| `evict` | [`internal/actions/evict`](https://github.com/vilaca/portal/blob/main/internal/actions/evict/action.go) | no | 30s |
+| `patch-networkpolicy` | [`internal/actions/patchnp`](https://github.com/vilaca/portal/blob/main/internal/actions/patchnp/action.go) | yes | 30s |
+| `revoke-sa-token` | [`internal/actions/revoketoken`](https://github.com/vilaca/portal/blob/main/internal/actions/revoketoken/action.go) | no | 60s |
 
 Full reference: [../reference/actions.md](../reference/actions.md).
 
 ## Idempotency
 
-The idempotency key is `sha256(rule | gvk | namespace | name | actionType)` ([`dispatcher.go`](../../internal/actions/engine/dispatcher.go), function `idemKey`). Within the default window (`Action.DefaultRateLimit()`) a second identical attempt is suppressed and counted as `portal_actions_total{action,result="duplicate"}`.
+The idempotency key is `sha256(rule | gvk | namespace | name | actionType)` ([`dispatcher.go`](https://github.com/vilaca/portal/blob/main/internal/actions/engine/dispatcher.go), function `idemKey`). Within the default window (`Action.DefaultRateLimit()`) a second identical attempt is suppressed and counted as `portal_actions_total{action,result="duplicate"}`.
 
 Per-action `Idempotent()` returns whether the action is safe to repeat — `evict` and `revoke-sa-token` return `false`, the rest return `true`.
 
@@ -31,7 +31,7 @@ actions:
   - {type: alertmanager, rateLimit: 1/hour}
 ```
 
-The limiter is a sliding window per `(rule, target)` tuple. Implementation: [`internal/actions/engine/ratelimit.go`](../../internal/actions/engine/ratelimit.go). When a request is rejected by the limiter the dispatcher records `portal_actions_total{result="ratelimited"}`.
+The limiter is a sliding window per `(rule, target)` tuple. Implementation: [`internal/actions/engine/ratelimit.go`](https://github.com/vilaca/portal/blob/main/internal/actions/engine/ratelimit.go). When a request is rejected by the limiter the dispatcher records `portal_actions_total{result="ratelimited"}`.
 
 ## Audit log
 

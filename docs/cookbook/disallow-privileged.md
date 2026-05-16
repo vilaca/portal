@@ -1,6 +1,6 @@
 # Disallow privileged containers
 
-Block privileged containers at admission **and** surface existing ones via audit. Mirrors [`examples/rules/privileged-container.yaml`](../../examples/rules/privileged-container.yaml).
+Block privileged containers at admission **and** surface existing ones via audit. Mirrors [`examples/rules/privileged-container.yaml`](https://github.com/vilaca/portal/blob/main/examples/rules/privileged-container.yaml).
 
 ## Manifest
 

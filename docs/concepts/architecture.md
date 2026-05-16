@@ -43,7 +43,7 @@ The repo enforces a one-way dependency on `internal/api`:
 
 > Every `internal/*` package may depend on `internal/api`. Nothing else may depend on `internal/{admission,audit,network,actions/...}`.
 
-`internal/api` contains pure interfaces and DTOs ([`internal/api/rule.go`](../../internal/api/rule.go), [`engine.go`](../../internal/api/engine.go), [`action.go`](../../internal/api/action.go), [`sink.go`](../../internal/api/sink.go), [`source.go`](../../internal/api/source.go)). Implementations register themselves at `init()` time via `api.RegisterEngine`, `api.RegisterAction`, `api.RegisterSink`.
+`internal/api` contains pure interfaces and DTOs ([`internal/api/rule.go`](https://github.com/vilaca/portal/blob/main/internal/api/rule.go), [`engine.go`](https://github.com/vilaca/portal/blob/main/internal/api/engine.go), [`action.go`](https://github.com/vilaca/portal/blob/main/internal/api/action.go), [`sink.go`](https://github.com/vilaca/portal/blob/main/internal/api/sink.go), [`source.go`](https://github.com/vilaca/portal/blob/main/internal/api/source.go)). Implementations register themselves at `init()` time via `api.RegisterEngine`, `api.RegisterAction`, `api.RegisterSink`.
 
 ## Pipeline
 

@@ -29,8 +29,8 @@ spec:
 
 ## Action behaviour
 
-- `label` ([`internal/actions/label/action.go`](../../internal/actions/label/action.go)) applies `portal.security/quarantine=true` via server-side apply, field manager `portal`. Idempotent — re-running is a no-op. Default rate limit 5 s, overridden per-action above.
-- `alertmanager` ([`internal/actions/alertmanager_action/action.go`](../../internal/actions/alertmanager_action/action.go)) routes the rule's `template:` shorthand through the AlertManager sink. Default rate limit 5 m; overridden to 1/h here so repeated audit fan-out from a noisy informer event doesn't flood the on-call channel.
+- `label` ([`internal/actions/label/action.go`](https://github.com/vilaca/portal/blob/main/internal/actions/label/action.go)) applies `portal.security/quarantine=true` via server-side apply, field manager `portal`. Idempotent — re-running is a no-op. Default rate limit 5 s, overridden per-action above.
+- `alertmanager` ([`internal/actions/alertmanager_action/action.go`](https://github.com/vilaca/portal/blob/main/internal/actions/alertmanager_action/action.go)) routes the rule's `template:` shorthand through the AlertManager sink. Default rate limit 5 m; overridden to 1/h here so repeated audit fan-out from a noisy informer event doesn't flood the on-call channel.
 
 Both actions share the dispatcher's idempotency cache: a second identical attempt on the same pod within the window is suppressed and counted as `portal_actions_total{result="duplicate"}`.
 

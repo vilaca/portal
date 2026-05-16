@@ -35,7 +35,7 @@ kubectl rollout status -n portal-system deployment/portal --timeout=2m
 
 ## 3. Apply a rule
 
-Portal accepts rules from two sources: folder-format YAML (legacy podwatcher-poc compatibility, mounted via ConfigMap) and `PortalClusterRule` CRs (canonical). The repo's [examples/rules/](../../examples/rules/) folder ships folder-format manifests for `portal migrate-rules` round-trip testing — they are **not** valid `kubectl apply` input on their own.
+Portal accepts rules from two sources: folder-format YAML (legacy podwatcher-poc compatibility, mounted via ConfigMap) and `PortalClusterRule` CRs (canonical). The repo's [examples/rules/](https://github.com/vilaca/portal/blob/main/examples/rules/) folder ships folder-format manifests for `portal migrate-rules` round-trip testing — they are **not** valid `kubectl apply` input on their own.
 
 ### Option A — folder format (mount via ConfigMap)
 

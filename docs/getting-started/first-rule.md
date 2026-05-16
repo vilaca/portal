@@ -47,7 +47,7 @@ kubectl get portalclusterrule disallow-hostnetwork
 kubectl describe portalclusterrule disallow-hostnetwork
 ```
 
-The CRD has a `.status` subresource: `evalCount`, `violationCount`, `lastApplied`, `parseError`, `activeOn` (see [`internal/rule/v1alpha1/types.go`](../../internal/rule/v1alpha1/types.go)). If `spec.rule` fails to compile, `status.parseError` is populated within roughly one reconcile interval.
+The CRD has a `.status` subresource: `evalCount`, `violationCount`, `lastApplied`, `parseError`, `activeOn` (see [`internal/rule/v1alpha1/types.go`](https://github.com/vilaca/portal/blob/main/internal/rule/v1alpha1/types.go)). If `spec.rule` fails to compile, `status.parseError` is populated within roughly one reconcile interval.
 
 ## 3. Trigger a deny
 

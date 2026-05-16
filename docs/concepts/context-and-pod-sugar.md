@@ -1,6 +1,6 @@
 # Context and pod sugar
 
-The expr-lang env Portal exposes to a rule has three layers ([`internal/api/context.go`](../../internal/api/context.go), [`internal/context/pod/builder.go`](../../internal/context/pod/builder.go)):
+The expr-lang env Portal exposes to a rule has three layers ([`internal/api/context.go`](https://github.com/vilaca/portal/blob/main/internal/api/context.go), [`internal/context/pod/builder.go`](https://github.com/vilaca/portal/blob/main/internal/context/pod/builder.go)):
 
 1. **`object` — universal.** The raw resource as `*unstructured.Unstructured` rendered as nested maps. Every field in the K8s schema is reachable: `object.spec.replicas`, `object.spec.volumes[0].hostPath`, `object.spec.tolerations`, custom CRD fields, anything. This is the escape hatch — no field is ever inaccessible.
 2. **Pod sugar — Pods and pod-shaped workloads only.** A deliberately narrow façade matching `podwatcher-poc`'s surface byte-for-byte.

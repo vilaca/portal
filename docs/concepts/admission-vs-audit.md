@@ -1,6 +1,6 @@
 # Admission vs audit
 
-Portal evaluates rules in three loops: **admission**, **audit**, and **network**. The `mode:` field on a rule (`[]api.Mode`, see [`internal/api/rule.go`](../../internal/api/rule.go)) opts the rule into one or more.
+Portal evaluates rules in three loops: **admission**, **audit**, and **network**. The `mode:` field on a rule (`[]api.Mode`, see [`internal/api/rule.go`](https://github.com/vilaca/portal/blob/main/internal/api/rule.go)) opts the rule into one or more.
 
 ## When admission fires
 
@@ -8,14 +8,14 @@ Portal evaluates rules in three loops: **admission**, **audit**, and **network**
 - Has the inbound object in `request.object` and the prior state (UPDATE) in `request.oldObject`.
 - Exposes `request.{operation,dryRun,userInfo}` in the expr-lang env (see [../reference/expression-language.md](../reference/expression-language.md)).
 - `enforcementAction` is honoured: `deny` rejects the request, `warn` admits with a `kubectl` warning, `dryrun` admits silently but still records to sinks.
-- Code path: [`internal/admission/handler.go`](../../internal/admission/handler.go).
+- Code path: [`internal/admission/handler.go`](https://github.com/vilaca/portal/blob/main/internal/admission/handler.go).
 
 ## When audit fires
 
 - Driven by `client-go` informers; events arrive on already-persisted objects (`OnAdd`/`OnUpdate`/`OnDelete`).
 - Asynchronous. `request.*` is **not bound** — only `object`, `metadata`, and pod-sugar keys are present.
 - `enforcementAction` is **ignored**. Audit always feeds the violation to sinks and the action dispatcher.
-- Code path: [`internal/audit/controller.go`](../../internal/audit/controller.go).
+- Code path: [`internal/audit/controller.go`](https://github.com/vilaca/portal/blob/main/internal/audit/controller.go).
 
 ## Picking modes
 

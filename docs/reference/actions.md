@@ -1,6 +1,6 @@
 # Built-in actions
 
-Every action implements [`api.Action`](../../internal/api/action.go):
+Every action implements [`api.Action`](https://github.com/vilaca/portal/blob/main/internal/api/action.go):
 
 ```go
 type Action interface {
@@ -15,7 +15,7 @@ Default rate-limit windows and idempotency policy live with each implementation;
 
 ## `alertmanager`
 
-Implementation: [`internal/actions/alertmanager_action/action.go`](../../internal/actions/alertmanager_action/action.go).
+Implementation: [`internal/actions/alertmanager_action/action.go`](https://github.com/vilaca/portal/blob/main/internal/actions/alertmanager_action/action.go).
 
 Wraps the AlertManager `OutputSink` so the rule's `alert:` shorthand and explicit `actions: [{type: alertmanager, ...}]` flow through the same dispatcher (idempotency + rate limit).
 
@@ -33,7 +33,7 @@ actions:
 
 ## `label`
 
-Implementation: [`internal/actions/label/action.go`](../../internal/actions/label/action.go). Server-side apply with field manager `portal`.
+Implementation: [`internal/actions/label/action.go`](https://github.com/vilaca/portal/blob/main/internal/actions/label/action.go). Server-side apply with field manager `portal`.
 
 | Property | Value |
 |----------|-------|
@@ -51,7 +51,7 @@ actions:
 
 ## `annotate`
 
-Implementation: [`internal/actions/annotate/action.go`](../../internal/actions/annotate/action.go). Same SSA mechanic as `label`, targeting `metadata.annotations`.
+Implementation: [`internal/actions/annotate/action.go`](https://github.com/vilaca/portal/blob/main/internal/actions/annotate/action.go). Same SSA mechanic as `label`, targeting `metadata.annotations`.
 
 | Property | Value |
 |----------|-------|
@@ -69,7 +69,7 @@ actions:
 
 ## `evict`
 
-Implementation: [`internal/actions/evict/action.go`](../../internal/actions/evict/action.go). Issues `policy/v1.Eviction` on the violating pod.
+Implementation: [`internal/actions/evict/action.go`](https://github.com/vilaca/portal/blob/main/internal/actions/evict/action.go). Issues `policy/v1.Eviction` on the violating pod.
 
 | Property | Value |
 |----------|-------|
@@ -87,7 +87,7 @@ actions:
 
 ## `patch-networkpolicy`
 
-Implementation: [`internal/actions/patchnp/action.go`](../../internal/actions/patchnp/action.go). Server-side apply on `networkpolicies.networking.k8s.io/v1`.
+Implementation: [`internal/actions/patchnp/action.go`](https://github.com/vilaca/portal/blob/main/internal/actions/patchnp/action.go). Server-side apply on `networkpolicies.networking.k8s.io/v1`.
 
 | Property | Value |
 |----------|-------|
@@ -108,7 +108,7 @@ actions:
 
 ## `revoke-sa-token`
 
-Implementation: [`internal/actions/revoketoken/action.go`](../../internal/actions/revoketoken/action.go). Deletes the ServiceAccount token Secret, forcing rotation.
+Implementation: [`internal/actions/revoketoken/action.go`](https://github.com/vilaca/portal/blob/main/internal/actions/revoketoken/action.go). Deletes the ServiceAccount token Secret, forcing rotation.
 
 | Property | Value |
 |----------|-------|
