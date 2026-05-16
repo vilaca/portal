@@ -1,0 +1,212 @@
+# Default values for portal.
+# Every value is annotated with `# --` style comments so helm-docs can lift
+# the documentation into docs/reference/helm-values.md.
+
+global:
+  # -- Whether the ValidatingWebhookConfiguration uses failurePolicy=Fail.
+  # When true, API server requests are rejected if Portal is unavailable —
+  # ≥2 replicas + PDB become mandatory. System namespaces are always
+  # excluded regardless of this flag (see templates/validatingwebhookconfiguration.yaml).
+  failClosed: true
+  # -- Deployment topology. "combined" runs every enabled layer in one
+  # Deployment. "split" deploys one Deployment per layer (admission /
+  # audit / network) for independent scaling. v1 ships combined only;
+  # the split-mode templates are stubbed for forward compat.
+  mode: combined
+
+image:
+  # -- Container image repository.
+  repository: ghcr.io/vilaca/portal
+  # -- Container image tag. Defaults to the chart appVersion when empty.
+  tag: ""
+  # -- Container image pull policy.
+  pullPolicy: IfNotPresent
+  # -- Image pull secrets to attach to the ServiceAccount.
+  pullSecrets: []
+
+# -- Number of Portal replicas. 2 is the minimum for fail-closed HA; the
+# PodDisruptionBudget keeps ≥1 healthy during rollouts so workload-namespace
+# admission requests continue to succeed.
+replicaCount: 2
+
+resources:
+  requests:
+    # -- CPU request per Portal pod.
+    cpu: 100m
+    # -- Memory request per Portal pod.
+    memory: 128Mi
+  limits:
+    # -- CPU limit per Portal pod.
+    cpu: 500m
+    # -- Memory limit per Portal pod.
+    memory: 256Mi
+
+# -- Node selector applied to Portal pods.
+nodeSelector: {}
+
+# -- Tolerations applied to Portal pods.
+tolerations: []
+
+# -- Affinity rules applied to Portal pods. The chart adds a preferred
+# pod anti-affinity by default — overridden when this value is non-empty.
+affinity: {}
+
+podSecurityContext:
+  # -- Pod-level fsGroup. 65532 is the distroless `nonroot` group.
+  fsGroup: 65532
+  # -- Reject pods whose container security context allows root.
+  runAsNonRoot: true
+  seccompProfile:
+    # -- Seccomp profile applied at pod level.
+    type: RuntimeDefault
+
+securityContext:
+  # -- Run as the distroless nonroot user.
+  runAsUser: 65532
+  # -- Run as the distroless nonroot group.
+  runAsGroup: 65532
+  # -- Enforce non-root execution at container level.
+  runAsNonRoot: true
+  # -- Mount the root filesystem read-only.
+  readOnlyRootFilesystem: true
+  # -- Disallow privilege escalation.
+  allowPrivilegeEscalation: false
+  capabilities:
+    # -- Drop all Linux capabilities; Portal needs none.
+    drop:
+      - ALL
+
+serviceAccount:
+  # -- Create a ServiceAccount for Portal. Set to false to reuse an existing one.
+  create: true
+  # -- Name of the ServiceAccount. Defaults to portal.fullname.
+  name: ""
+  # -- Extra annotations on the ServiceAccount (useful for IRSA / Workload Identity).
+  annotations: {}
+
+webhook:
+  # -- Enable the admission webhook layer (CLI: --admission).
+  enabled: true
+  # -- Webhook timeoutSeconds in the ValidatingWebhookConfiguration.
+  timeoutSeconds: 5
+  # -- Container port the webhook TLS server listens on.
+  port: 8443
+  # -- Optional pre-baked caBundle (base64). When empty, Portal patches the
+  # ValidatingWebhookConfiguration at startup with its self-signed CA,
+  # or cert-manager populates it via the Certificate's caBundle injection.
+  caBundle: ""
+  # -- GVKs subject to admission. Each entry is {apiGroups, apiVersions, resources}.
+  # The system-namespace exclusion is layered on top of this via namespaceSelector.
+  rules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      resources: ["pods"]
+      operations: ["CREATE", "UPDATE"]
+    - apiGroups: ["apps"]
+      apiVersions: ["v1"]
+      resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      operations: ["CREATE", "UPDATE"]
+    - apiGroups: ["batch"]
+      apiVersions: ["v1"]
+      resources: ["jobs", "cronjobs"]
+      operations: ["CREATE", "UPDATE"]
+    - apiGroups: ["networking.k8s.io"]
+      apiVersions: ["v1"]
+      resources: ["networkpolicies"]
+      operations: ["CREATE", "UPDATE"]
+
+audit:
+  # -- Enable the informer-driven audit layer (CLI: --audit).
+  enabled: false
+  # -- Enable lease-based leader election. Informers run on every replica;
+  # only the leader dispatches actions / writes PolicyReports.
+  leaderElection: true
+  # -- Informer resync period. Watch events are the main path; resync is a
+  # safety net only.
+  resyncPeriod: 10m
+
+network:
+  # -- Enable the NetworkPolicy declarative analyser (CLI: --network).
+  # Implies audit must also be on so informers are available.
+  enabled: false
+
+policyReport:
+  # -- Emit wgpolicyk8s.io/v1alpha2 PolicyReport / ClusterPolicyReport CRs.
+  enabled: true
+
+alertmanager:
+  # -- AlertManager v2 alerts endpoint. Empty disables the AlertManager sink.
+  url: ""
+
+certManager:
+  # -- Use cert-manager to provision the webhook TLS Secret. When false the
+  # binary bootstraps a self-signed CA on startup and patches the
+  # ValidatingWebhookConfiguration.caBundle itself.
+  enabled: false
+  # -- Issuer kind to use when certManager.enabled. When empty an in-chart
+  # self-signed Issuer is created.
+  issuerKind: ""
+  # -- Issuer name to use when certManager.enabled. When empty an in-chart
+  # self-signed Issuer is created.
+  issuerName: ""
+
+rules:
+  # -- Name of an existing ConfigMap holding rule YAML files. Mounted at
+  # /etc/portal/rules and passed via --rules-folder. Empty disables folder loading.
+  folderConfigMap: ""
+  # -- Watch PortalClusterRule + PortalRule CRs (CLI: --rules-cr).
+  cr: true
+  # -- Install a small bootstrap set of PortalClusterRules covering the
+  # migrated podwatcher-poc examples via a post-install hook.
+  bootstrap: true
+
+# -- Additional GVKs to start informers for, in "group/version/Kind" form.
+# Empty group renders as "/v1/ConfigMap" etc. These extend the set computed
+# from the audited rule corpus.
+watchedGvks: []
+
+podDisruptionBudget:
+  # -- Minimum available replicas during voluntary disruption. ≥1 is required
+  # when failClosed=true. Set to 0 to disable the PDB entirely.
+  minAvailable: 1
+
+metrics:
+  # -- Container port the Prometheus /metrics + /healthz + /readyz listener serves on.
+  port: 9090
+
+serviceMonitor:
+  # -- Create a Prometheus Operator ServiceMonitor.
+  enabled: false
+  # -- Scrape interval.
+  interval: 30s
+  # -- Extra labels added to the ServiceMonitor (typically the Prometheus
+  # `release` label for kube-prometheus-stack).
+  labels: {}
+
+rbac:
+  # -- Create the ClusterRole + ClusterRoleBinding.
+  create: true
+  actions:
+    # -- Grant `patch` on workload kinds so the label action can mutate
+    # metadata.labels via server-side apply.
+    label: false
+    # -- Grant `patch` on workload kinds so the annotate action can mutate
+    # metadata.annotations via server-side apply.
+    annotate: false
+    # -- Grant `create` on pods/eviction so the evict action can drain pods.
+    evict: false
+    # -- Grant `patch` on networkpolicies.networking.k8s.io for the patch-NP
+    # action.
+    patchnp: false
+    # -- Grant `delete` on secrets so the revoke-sa-token action can force
+    # ServiceAccount token rotation.
+    revoketoken: false
+
+# -- Extra environment variables for the Portal container.
+extraEnv: []
+
+# -- Extra volumes mounted in the Portal pod.
+extraVolumes: []
+
+# -- Extra volume mounts on the Portal container.
+extraVolumeMounts: []

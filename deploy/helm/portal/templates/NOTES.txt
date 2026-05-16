@@ -1,0 +1,50 @@
+Portal {{ .Chart.AppVersion }} installed into namespace "{{ .Release.Namespace }}".
+
+Verify the deployment:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl get validatingwebhookconfiguration {{ include "portal.fullname" . }} -o yaml
+
+Webhook fail policy: {{ ternary "Fail (fail-closed)" "Ignore (fail-open)" .Values.global.failClosed }}
+Replicas:            {{ .Values.replicaCount }}
+PolicyReport sink:   {{ .Values.policyReport.enabled }}
+Audit layer:         {{ .Values.audit.enabled }}
+Network analyser:    {{ .Values.network.enabled }}
+
+Rule sources:
+  - CRDs (PortalClusterRule / PortalRule): {{ .Values.rules.cr }}
+  - Folder ConfigMap:                      {{ default "(none)" .Values.rules.folderConfigMap }}
+
+Define a rule:
+
+  cat <<'EOF' | kubectl apply -f -
+  apiVersion: portal.io/v1alpha1
+  kind: PortalClusterRule
+  metadata:
+    name: disallow-privileged
+  spec:
+    name: disallow-privileged
+    enabled: true
+    severity: high
+    mode: [admission]
+    enforcementAction: deny
+    match:
+      gvk:
+        - {group: "", version: v1, kind: Pod}
+    rule: |
+      container.securityContext.privileged == true
+  EOF
+
+Test the webhook:
+
+  kubectl run privileged --image=nginx --privileged
+  # Expected: rejected by portal.io.
+
+Break-glass: scale the Deployment to 0 or delete the
+ValidatingWebhookConfiguration if a misconfigured rule ever blocks all admissions.
+{{- if .Values.global.failClosed }}
+
+WARNING: failClosed=true. With Portal unavailable, workload-namespace API
+calls will be rejected. System namespaces (kube-system / kube-public /
+kube-node-lease / {{ .Release.Namespace }}) remain reachable.
+{{- end }}

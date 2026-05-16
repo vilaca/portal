@@ -1,0 +1,114 @@
+site_name: Portal
+site_description: Kubernetes admission, audit, NetworkPolicy and response-action engine
+site_url: https://vilaca.github.io/portal/
+repo_url: https://github.com/vilaca/portal
+repo_name: vilaca/portal
+docs_dir: docs
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.indexes
+    - content.code.copy
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - attr_list
+  - tables
+
+nav:
+  - Home: README.md
+  - Plan: PLAN.md
+  - Getting started:
+      - Quickstart on kind: getting-started/quickstart-kind.md
+      - Install with Helm: getting-started/install-helm.md
+      - Your first rule: getting-started/first-rule.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+      - Admission vs audit: concepts/admission-vs-audit.md
+      - Cross-resource lookups: concepts/cross-resource.md
+      - Context and pod sugar: concepts/context-and-pod-sugar.md
+      - Actions and rate limiting: concepts/actions-and-rate-limiting.md
+      - Fail-closed: concepts/fail-closed.md
+  - Reference:
+      - Rule schema: reference/rule-schema.md
+      - Expression language: reference/expression-language.md
+      - Actions: reference/actions.md
+      - Metrics: reference/metrics.md
+      - Helm values: reference/helm-values.md
+      - CLI: reference/cli.md
+      - CRDs:
+          - PortalClusterRule: reference/crd/portalclusterrule.md
+          - PortalRule: reference/crd/portalrule.md
+  - Cookbook:
+      - Disallow privileged: cookbook/disallow-privileged.md
+      - Enforce labels: cookbook/enforce-labels.md
+      - Require PDB per Deployment: cookbook/require-pdb-per-deployment.md
+      - Allowed registries: cookbook/allowed-registries.md
+      - Non-root containers: cookbook/non-root-containers.md
+      - NetworkPolicy default-deny: cookbook/networkpolicy-default-deny.md
+      - Quarantine on violation: cookbook/quarantine-on-violation.md
+      - Revoke SA token on exec (v2): cookbook/revoke-sa-token-on-exec.md
+  - Operator:
+      - HA and leader election: operator/ha-and-leader-election.md
+      - RBAC scoping: operator/rbac-scoping.md
+      - Certificate management: operator/certificate-management.md
+      - Upgrading: operator/upgrading.md
+      - Troubleshooting: operator/troubleshooting.md
+      - Observability: operator/observability.md
+      - Recovery from self-lockout: operator/recovery-from-self-lockout.md
+  - Security:
+      - Threat model: security/threat-model.md
+      - RBAC posture: security/rbac-posture.md
+      - Supply chain: security/supply-chain.md
+      - Responsible disclosure: security/responsible-disclosure.md
+  - Plugin authors:
+      - Custom action: plugin-author/custom-action.md
+      - Custom sink: plugin-author/custom-sink.md
+      - Custom expression engine: plugin-author/custom-expression-engine.md
+      - Interface reference: plugin-author/interface-reference.md
+  - Contributing:
+      - Repo layout: contributing/repo-layout.md
+      - Module boundaries: contributing/module-boundaries.md
+      - Testing approach: contributing/testing-approach.md
+      - Release process: contributing/release-process.md
+  - Migration:
+      - From podwatcher-poc: migration/from-podwatcher-poc.md
+      - Side-by-side rule syntax: migration/side-by-side-rule-syntax.md
+      - Coexistence with Kyverno: migration/coexistence-with-kyverno.md
+  - ADRs:
+      - 0001 Go and expr-lang: adr/0001-go-and-exprlang.md
+      - 0002 CRDs primary, folder fallback: adr/0002-crds-primary-folder-fallback.md
+      - 0003 Fail-closed default: adr/0003-fail-closed-default.md
+      - 0004 No mutation, no eBPF: adr/0004-no-mutation-no-ebpf.md
+      - 0005 Cross-resource full v1: adr/0005-cross-resource-full-v1.md
+      - 0006 Pod sugar narrow façade: adr/0006-pod-sugar-narrow-facade.md
+  - Comparison:
+      - Feature matrix: comparison/feature-matrix.md
+      - Portal vs podwatcher: comparison/podwatcher-comparison.md

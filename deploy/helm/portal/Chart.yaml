@@ -1,0 +1,22 @@
+apiVersion: v2
+name: portal
+description: |
+  Portal — an admission webhook, informer-driven audit loop, and declarative
+  NetworkPolicy analyser, with a built-in response-action engine. Successor to
+  podwatcher-poc; AlertManager-compatible, PolicyReport-native, expr-lang rules.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/vilaca/portal
+sources:
+  - https://github.com/vilaca/portal
+keywords:
+  - admission
+  - audit
+  - network-policy
+  - security
+  - policyreport
+maintainers:
+  - name: Joao Vilaca
+    email: joao.vilaca@relexsolutions.com

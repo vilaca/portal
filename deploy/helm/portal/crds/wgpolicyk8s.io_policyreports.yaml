@@ -1,0 +1,132 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: policyreports.wgpolicyk8s.io
+spec:
+  group: wgpolicyk8s.io
+  scope: Namespaced
+  names:
+    kind: PolicyReport
+    listKind: PolicyReportList
+    plural: policyreports
+    singular: policyreport
+    shortNames:
+      - polr
+  versions:
+    - name: v1alpha2
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Pass
+          type: integer
+          jsonPath: .summary.pass
+        - name: Fail
+          type: integer
+          jsonPath: .summary.fail
+        - name: Warn
+          type: integer
+          jsonPath: .summary.warn
+        - name: Error
+          type: integer
+          jsonPath: .summary.error
+        - name: Skip
+          type: integer
+          jsonPath: .summary.skip
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            scope:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            scopeSelector:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+            summary:
+              type: object
+              properties:
+                pass:
+                  type: integer
+                  format: int64
+                fail:
+                  type: integer
+                  format: int64
+                warn:
+                  type: integer
+                  format: int64
+                error:
+                  type: integer
+                  format: int64
+                skip:
+                  type: integer
+                  format: int64
+            results:
+              type: array
+              items:
+                type: object
+                properties:
+                  source:
+                    type: string
+                  policy:
+                    type: string
+                  rule:
+                    type: string
+                  category:
+                    type: string
+                  severity:
+                    type: string
+                    enum: ["", info, low, medium, high, critical]
+                  result:
+                    type: string
+                    enum: ["", pass, fail, warn, error, skip]
+                  message:
+                    type: string
+                  scored:
+                    type: boolean
+                  subjects:
+                    type: array
+                    items:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                  resources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        apiVersion:
+                          type: string
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        uid:
+                          type: string
+                  resourceSelector:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  properties:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  timestamp:
+                    type: object
+                    properties:
+                      seconds:
+                        type: integer
+                        format: int64
+                      nanos:
+                        type: integer
+                        format: int32

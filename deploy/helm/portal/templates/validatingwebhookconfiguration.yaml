@@ -1,0 +1,49 @@
+{{- if .Values.webhook.enabled -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "portal.fullname" . }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+  {{- if .Values.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ printf "%s/%s" .Release.Namespace (include "portal.fullname" .) | quote }}
+  {{- end }}
+webhooks:
+  - name: portal.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    matchPolicy: Equivalent
+    failurePolicy: {{ ternary "Fail" "Ignore" .Values.global.failClosed }}
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - kube-public
+            - kube-node-lease
+            - {{ .Release.Namespace }}
+    clientConfig:
+      service:
+        name: {{ include "portal.fullname" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /validate
+        port: 443
+      {{- if .Values.webhook.caBundle }}
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+      {{- end }}
+    rules:
+      {{- range .Values.webhook.rules }}
+      - apiGroups:
+          {{- toYaml .apiGroups | nindent 10 }}
+        apiVersions:
+          {{- toYaml .apiVersions | nindent 10 }}
+        resources:
+          {{- toYaml .resources | nindent 10 }}
+        operations:
+          {{- toYaml .operations | nindent 10 }}
+        scope: "*"
+      {{- end }}
+{{- end }}

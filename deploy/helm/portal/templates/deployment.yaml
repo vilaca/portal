@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "portal.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "portal.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "portal.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ printf "%v" .Values | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "portal.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- else }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "portal.selectorLabels" . | nindent 20 }}
+      {{- end }}
+      containers:
+        - name: portal
+          image: {{ include "portal.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - run
+            - --admission={{ .Values.webhook.enabled }}
+            - --audit={{ .Values.audit.enabled }}
+            - --network={{ .Values.network.enabled }}
+            - --listen=:{{ .Values.webhook.port }}
+            - --metrics-addr=:{{ .Values.metrics.port }}
+            - --cert-dir=/etc/portal/certs
+            - --install-namespace={{ .Release.Namespace }}
+            - --fail-closed={{ .Values.global.failClosed }}
+            - --leader-election={{ .Values.audit.leaderElection }}
+            - --policy-report={{ .Values.policyReport.enabled }}
+            - --rules-cr={{ .Values.rules.cr }}
+            {{- if .Values.alertmanager.url }}
+            - --alertmanager-url={{ .Values.alertmanager.url }}
+            {{- end }}
+            {{- range .Values.watchedGvks }}
+            - --watched-gvk={{ . }}
+            {{- end }}
+            {{- if .Values.rules.folderConfigMap }}
+            - --rules-folder=/etc/portal/rules
+            {{- end }}
+          ports:
+            - name: webhook
+              containerPort: {{ .Values.webhook.port }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: webhook-tls
+              mountPath: /etc/portal/certs
+              readOnly: true
+            {{- if .Values.rules.folderConfigMap }}
+            - name: rules
+              mountPath: /etc/portal/rules
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: webhook-tls
+          secret:
+            secretName: {{ include "portal.tlsSecretName" . }}
+            optional: true
+        {{- if .Values.rules.folderConfigMap }}
+        - name: rules
+          configMap:
+            name: {{ .Values.rules.folderConfigMap }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

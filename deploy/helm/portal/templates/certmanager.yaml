@@ -1,0 +1,47 @@
+{{- if .Values.certManager.enabled -}}
+{{- if and (not .Values.certManager.issuerName) (not .Values.certManager.issuerKind) }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "portal.fullname" . }}-selfsigned
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "portal.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "portal.tlsSecretName" . }}
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  subject:
+    organizations:
+      - portal
+  commonName: {{ include "portal.fullname" . }}.{{ .Release.Namespace }}.svc
+  dnsNames:
+    - {{ include "portal.fullname" . }}
+    - {{ include "portal.fullname" . }}.{{ .Release.Namespace }}
+    - {{ include "portal.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "portal.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    {{- if .Values.certManager.issuerName }}
+    name: {{ .Values.certManager.issuerName }}
+    kind: {{ default "Issuer" .Values.certManager.issuerKind }}
+    {{- else }}
+    name: {{ include "portal.fullname" . }}-selfsigned
+    kind: Issuer
+    {{- end }}
+    group: cert-manager.io
+{{- end }}

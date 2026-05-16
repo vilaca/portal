@@ -1,0 +1,104 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "portal.fullname" . }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+rules:
+  # Core read access — informer caches + admission lookups.
+  - apiGroups: [""]
+    resources:
+      - pods
+      - namespaces
+      - configmaps
+      - services
+      - serviceaccounts
+      - nodes
+    verbs: ["get", "list", "watch"]
+  {{- if .Values.rbac.actions.revoketoken }}
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "delete"]
+  {{- else }}
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+  # Workloads.
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  # Networking.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies", "ingresses"]
+    verbs: ["get", "list", "watch"]
+  {{- if .Values.rbac.actions.patchnp }}
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["patch", "update"]
+  {{- end }}
+  # Policy.
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  # Webhook config — Portal patches its own caBundle on startup when not using cert-manager.
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  # Portal CRs.
+  - apiGroups: ["portal.io"]
+    resources: ["portalclusterrules", "portalrules"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["portal.io"]
+    resources: ["portalclusterrules/status", "portalrules/status"]
+    verbs: ["get", "patch", "update"]
+  {{- if .Values.policyReport.enabled }}
+  # PolicyReports.
+  - apiGroups: ["wgpolicyk8s.io"]
+    resources: ["policyreports", "clusterpolicyreports"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- end }}
+  # Leader election lease — namespaced grant is in the Role; the cluster
+  # grant covers reads only so cross-namespace audit doesn't get blocked.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch"]
+  # Events — Portal records action results.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  {{- if .Values.rbac.actions.evict }}
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  {{- end }}
+  {{- if or .Values.rbac.actions.label .Values.rbac.actions.annotate }}
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["patch", "update"]
+  {{- end }}
+  {{- with .Values.watchedGvks }}
+  # Extra watched GVKs from values.watchedGvks.
+  {{- range . }}
+  {{- $parts := splitList "/" . }}
+  {{- if eq (len $parts) 3 }}
+  - apiGroups: [{{ index $parts 0 | quote }}]
+    resources: [{{ index $parts 2 | lower | quote }}]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+  {{- end }}
+  {{- end }}
+{{- end }}
