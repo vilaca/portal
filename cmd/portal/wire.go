@@ -13,10 +13,14 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/vilaca/portal/internal/actions/annotate"
@@ -60,6 +64,7 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 		restCfg     *rest.Config
 		dynClient   dynamic.Interface
 		typedClient kubernetes.Interface
+		restMapper  meta.RESTMapper
 	)
 	if needsClients {
 		var err error
@@ -75,12 +80,25 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 		if err != nil {
 			return fmt.Errorf("typed client: %w", err)
 		}
+		// Discovery-backed RESTMapper. Deferred so the cache populates on
+		// first use; memory-cached so CRDs landing later are picked up via
+		// Reset(). One mapper instance is shared across audit (informer
+		// factory), network (analyser handlers), and the label/annotate
+		// actions — see internal/audit, internal/network, internal/actions/*.
+		disc, err := discovery.NewDiscoveryClientForConfig(restCfg)
+		if err != nil {
+			return fmt.Errorf("discovery client: %w", err)
+		}
+		restMapper = restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disc))
 	}
 
-	// 2. Configure action clients (placeholder → real factories).
+	// 2. Configure action clients (placeholder → real factories). label and
+	// annotate take the RESTMapper so they handle irregular plurals + CRDs;
+	// patchnp pins networkpolicies directly, evict/revoketoken use the
+	// typed client.
 	if needsClients {
-		label.Configure(dynClient)
-		annotate.Configure(dynClient)
+		label.Configure(dynClient, restMapper)
+		annotate.Configure(dynClient, restMapper)
 		patchnp.Configure(dynClient)
 		evict.Configure(typedClient)
 		revoketoken.Configure(typedClient)
@@ -176,6 +194,7 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 			LeaderElection:     opts.leaderElection,
 			LeaseLockNamespace: opts.installNamespace,
 			ContextBuilders:    builders,
+			RESTMapper:         restMapper,
 		})
 		if err != nil {
 			return fmt.Errorf("audit: %w", err)

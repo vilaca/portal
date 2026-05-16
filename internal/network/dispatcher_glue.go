@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/vilaca/portal/internal/api"
@@ -81,8 +82,10 @@ func opOf(v api.Violation) string {
 	return "network"
 }
 
-// defaultResourceForGVK is the audit package's pluraliser duplicated here so
-// the network module can be built independently.
+// defaultResourceForGVK is the dumb fallback used when no RESTMapper is
+// reachable through the AuditCache. It special-cases NetworkPolicy (the only
+// irregular plural in the v1 network analyser's input set) and lowercase+'s'
+// for everything else.
 func defaultResourceForGVK(gvk schema.GroupVersionKind) schema.GroupVersionResource {
 	r := strings.ToLower(gvk.Kind)
 	switch gvk.Kind {
@@ -94,6 +97,19 @@ func defaultResourceForGVK(gvk schema.GroupVersionKind) schema.GroupVersionResou
 		}
 	}
 	return schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: r}
+}
+
+// mapperBackedResolver mirrors the audit package's helper: prefer the
+// discovery-backed mapper, fall through to defaultResourceForGVK on miss so
+// a transient cache lookup doesn't stall the analyser.
+func mapperBackedResolver(m meta.RESTMapper) func(schema.GroupVersionKind) schema.GroupVersionResource {
+	return func(gvk schema.GroupVersionKind) schema.GroupVersionResource {
+		mapping, err := m.RESTMapping(gvk.GroupKind(), gvk.Version)
+		if err != nil {
+			return defaultResourceForGVK(gvk)
+		}
+		return mapping.Resource
+	}
 }
 
 // Compile-time: Analyser implements api.EventSource.

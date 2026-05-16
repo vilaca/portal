@@ -38,6 +38,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -96,10 +97,17 @@ type Options struct {
 	ContextBuilders []api.ContextBuilder
 
 	// ResourceForGVK is an optional override that maps GVK to GVR for the
-	// dynamic informer factory. Nil falls back to a naive kind→resource
-	// rule (lowercase + 's'); production wiring uses a controller-runtime
-	// RESTMapper.
+	// dynamic informer factory. When non-nil it takes precedence over
+	// RESTMapper. Nil-and-nil falls back to a naive lowercase+'s' rule.
 	ResourceForGVK func(schema.GroupVersionKind) schema.GroupVersionResource
+
+	// RESTMapper is the discovery-backed Kind→Resource resolver. Used to
+	// derive GVRs for the dynamic informer factory and exposed via
+	// Controller.RESTMapper() so the lookup/network/action modules can
+	// reuse it. Nil falls back to ResourceForGVK or, if that is also nil,
+	// the naive resolver — wrong on irregular plurals (NetworkPolicy →
+	// networkpolicys).
+	RESTMapper meta.RESTMapper
 }
 
 // Controller is the concrete api.EventSource produced by New. The struct is
@@ -182,7 +190,11 @@ func New(
 		opts.ContextBuilders = []api.ContextBuilder{pod.New()}
 	}
 	if opts.ResourceForGVK == nil {
-		opts.ResourceForGVK = defaultResourceForGVK
+		if opts.RESTMapper != nil {
+			opts.ResourceForGVK = mapperBackedResolver(opts.RESTMapper)
+		} else {
+			opts.ResourceForGVK = defaultResourceForGVK
+		}
 	}
 
 	dyn, err := dynamic.NewForConfig(cfg)
@@ -264,6 +276,14 @@ func (c *Controller) WatchedGVKs() []schema.GroupVersionKind {
 		out = append(out, gvk)
 	}
 	return out
+}
+
+// RESTMapper returns the discovery-backed Kind→Resource resolver wired into
+// this controller (or nil when none was supplied). Exported so the lookup,
+// network, and action modules can reuse the same mapper instead of
+// reinventing pluralisation.
+func (c *Controller) RESTMapper() meta.RESTMapper {
+	return c.opts.RESTMapper
 }
 
 // Start implements api.EventSource. It is blocking — the underlying
@@ -576,15 +596,32 @@ func (c *Controller) runLeaderElection(ctx context.Context) {
 }
 
 // defaultResourceForGVK is the dumb fallback that lowercases Kind and
-// appends 's'. It is correct for Pod, Deployment, NetworkPolicy, etc., and
-// wrong for things like Endpoints, NodeSelector. Production wire-up
-// supplies a RESTMapper-backed override.
+// appends 's'. It is wrong for irregular plurals (NetworkPolicy,
+// Endpoints, Ingress, ...) and for any CRD whose .spec.names.plural is
+// not derivable from the Kind. Production wire-up supplies a
+// RESTMapper-backed override via Options.RESTMapper; tests fall through
+// here when no mapper is provided.
 func defaultResourceForGVK(gvk schema.GroupVersionKind) schema.GroupVersionResource {
 	r := strings.ToLower(gvk.Kind)
 	if !strings.HasSuffix(r, "s") {
 		r += "s"
 	}
 	return schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: r}
+}
+
+// mapperBackedResolver returns a GVK→GVR function that consults a
+// meta.RESTMapper first and falls through to defaultResourceForGVK when
+// the mapper has no entry (transient discovery cache miss or unknown
+// kind). The fallthrough keeps the informer factory able to make
+// progress on already-loaded GVKs while a CRD lands.
+func mapperBackedResolver(m meta.RESTMapper) func(schema.GroupVersionKind) schema.GroupVersionResource {
+	return func(gvk schema.GroupVersionKind) schema.GroupVersionResource {
+		mapping, err := m.RESTMapping(gvk.GroupKind(), gvk.Version)
+		if err != nil {
+			return defaultResourceForGVK(gvk)
+		}
+		return mapping.Resource
+	}
 }
 
 // Compile-time: Controller implements api.EventSource.

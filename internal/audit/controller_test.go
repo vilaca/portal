@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 
@@ -92,6 +93,39 @@ func TestIsLeader_NonElectedIsTrueAfterStart(t *testing.T) {
 	c.isLeader.Store(true)
 	if !c.IsLeader() {
 		t.Errorf("IsLeader=false after Store; want true")
+	}
+}
+
+func TestMapperBackedResolver(t *testing.T) {
+	// Naive defaultResourceForGVK gives "networkpolicys"; a real mapper
+	// hands back "networkpolicies". This test pins that the mapper-backed
+	// resolver wins when both are wired.
+	m := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+		{Group: "networking.k8s.io", Version: "v1"},
+	})
+	m.Add(schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"}, meta.RESTScopeNamespace)
+
+	res := mapperBackedResolver(m)(schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"})
+	if res.Resource != "networkpolicies" {
+		t.Fatalf("mapper-backed resolver returned %q; want %q", res.Resource, "networkpolicies")
+	}
+
+	// Unknown Kind: should fall through to defaultResourceForGVK rather than error.
+	unknown := mapperBackedResolver(m)(schema.GroupVersionKind{Group: "x", Version: "v1", Kind: "Mystery"})
+	if unknown.Resource != "mysterys" { // naive fallback's wrong-but-deterministic plural
+		t.Fatalf("expected fallback to defaultResourceForGVK; got %q", unknown.Resource)
+	}
+}
+
+func TestRESTMapperAccessor(t *testing.T) {
+	cfg := &rest.Config{Host: "http://localhost:1"}
+	m := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Version: "v1"}})
+	src, err := New(cfg, []schema.GroupVersionKind{{Version: "v1", Kind: "Pod"}}, stubEngine{}, nil, nil, Options{RESTMapper: m})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if src.(*Controller).RESTMapper() != m {
+		t.Fatal("RESTMapper() accessor did not return the configured mapper")
 	}
 }
 

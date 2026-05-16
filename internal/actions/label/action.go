@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -42,18 +43,29 @@ func init() {
 	api.RegisterAction(actionType, func() api.Action { return &action{} })
 }
 
-// Configure swaps the registered factory for one backed by client.
-func Configure(client dynamic.Interface) {
-	api.RegisterAction(actionType, func() api.Action { return New(client) })
+// Configure swaps the registered factory for one bound to client and
+// mapper. mapper may be nil for tests; production wire-up always supplies a
+// discovery-backed RESTMapper so the action handles irregular plurals and
+// CRDs correctly.
+func Configure(client dynamic.Interface, mapper meta.RESTMapper) {
+	api.RegisterAction(actionType, func() api.Action { return NewWithMapper(client, mapper) })
 }
 
-// New constructs a label action bound to client.
+// New constructs a label action bound to client. The action falls back to
+// the local pluralise() when invoked without a mapper.
 func New(client dynamic.Interface) api.Action {
 	return &action{client: client}
 }
 
+// NewWithMapper is the production constructor — the mapper resolves
+// Kind→Resource via the discovery API instead of the local pluraliser.
+func NewWithMapper(client dynamic.Interface, mapper meta.RESTMapper) api.Action {
+	return &action{client: client, mapper: mapper}
+}
+
 type action struct {
 	client dynamic.Interface
+	mapper meta.RESTMapper
 }
 
 func (a *action) Type() string                    { return actionType }
@@ -75,7 +87,7 @@ func (a *action) Execute(ctx context.Context, v api.Violation, params map[string
 	if value == "" {
 		value = "true"
 	}
-	gvr := guessGVR(v.GVK)
+	gvr := a.guessGVR(v.GVK)
 	obj := buildMetadataPatch(v, "labels", key, value)
 	data, err := obj.MarshalJSON()
 	if err != nil {
@@ -107,11 +119,16 @@ func buildMetadataPatch(v api.Violation, mapKey, k, val string) *unstructured.Un
 	return o
 }
 
-// guessGVR maps a GroupVersionKind to a GroupVersionResource using the
-// "lowercase + s" rule, with a small set of irregular plurals that show up
-// in the v1 action set (NetworkPolicy → networkpolicies, etc.). In a future
-// wave this should consult a real RESTMapper from the shared informer cache.
-func guessGVR(gvk schema.GroupVersionKind) schema.GroupVersionResource {
+// guessGVR maps a GroupVersionKind to a GroupVersionResource. When a
+// RESTMapper is configured, it wins; otherwise the local pluraliser is
+// the fallback. The fallback path is exercised by unit tests; production
+// always has a mapper.
+func (a *action) guessGVR(gvk schema.GroupVersionKind) schema.GroupVersionResource {
+	if a.mapper != nil {
+		if mapping, err := a.mapper.RESTMapping(gvk.GroupKind(), gvk.Version); err == nil {
+			return mapping.Resource
+		}
+	}
 	return schema.GroupVersionResource{
 		Group:    gvk.Group,
 		Version:  gvk.Version,

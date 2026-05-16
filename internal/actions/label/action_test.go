@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -123,6 +124,62 @@ func TestPluralize(t *testing.T) {
 func TestRegistered(t *testing.T) {
 	if api.ActionFor(actionType) == nil {
 		t.Fatal("label action not registered")
+	}
+}
+
+// TestLabel_MapperOverridesPluralize verifies that when a RESTMapper is
+// wired (NewWithMapper), it wins over the local pluralize() — the canonical
+// regression: a Kind whose mapper-resolved Resource differs from the naive
+// inflection routes to the mapper's answer.
+func TestLabel_MapperOverridesPluralize(t *testing.T) {
+	// Stub mapper: "Database" → "databasen" (deliberately not-naive so we
+	// can prove the mapper beat pluralize, which would yield "databases").
+	m := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "x.example.com", Version: "v1"}})
+	gvk := schema.GroupVersionKind{Group: "x.example.com", Version: "v1", Kind: "Database"}
+	m.AddSpecific(gvk,
+		schema.GroupVersionResource{Group: "x.example.com", Version: "v1", Resource: "databasen"},
+		schema.GroupVersionResource{Group: "x.example.com", Version: "v1", Resource: "database"},
+		meta.RESTScopeNamespace,
+	)
+
+	client := newFakeClient()
+	a := NewWithMapper(client, m)
+	v := api.Violation{GVK: gvk, Namespace: "ns", Name: "db1"}
+	if err := a.Execute(context.Background(), v, map[string]any{"key": "k", "value": "v"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := ""
+	for _, act := range client.Actions() {
+		if act.GetVerb() == "patch" {
+			got = act.GetResource().Resource
+			break
+		}
+	}
+	if got != "databasen" {
+		t.Fatalf("mapper-wired action routed to %q; want %q (pluralize would have produced %q)", got, "databasen", "databases")
+	}
+}
+
+// TestLabel_FallsBackWithoutMapper proves the no-mapper path still uses the
+// local pluralize. NetworkPolicy is in the small irregular-plural table.
+func TestLabel_FallsBackWithoutMapper(t *testing.T) {
+	client := newFakeClient()
+	a := New(client)
+	v := api.Violation{
+		GVK:       schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"},
+		Namespace: "ns", Name: "np",
+	}
+	if err := a.Execute(context.Background(), v, map[string]any{"key": "k"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	got := ""
+	for _, act := range client.Actions() {
+		if act.GetVerb() == "patch" {
+			got = act.GetResource().Resource
+		}
+	}
+	if got != "networkpolicies" {
+		t.Fatalf("fallback pluralize gave %q; want %q", got, "networkpolicies")
 	}
 }
 

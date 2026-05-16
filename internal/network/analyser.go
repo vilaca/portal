@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/dynamicinformer"
@@ -90,7 +91,14 @@ func New(audit AuditCache, dispatcher api.ActionDispatcher, sinks []api.OutputSi
 		opts.WorkerPoolSize = DefaultWorkerPoolSize
 	}
 	if opts.ResourceForGVK == nil {
-		opts.ResourceForGVK = defaultResourceForGVK
+		if m, ok := audit.(interface{ RESTMapper() meta.RESTMapper }); ok {
+			if mapper := m.RESTMapper(); mapper != nil {
+				opts.ResourceForGVK = mapperBackedResolver(mapper)
+			}
+		}
+		if opts.ResourceForGVK == nil {
+			opts.ResourceForGVK = defaultResourceForGVK
+		}
 	}
 	a := &Analyser{
 		audit:          audit,
