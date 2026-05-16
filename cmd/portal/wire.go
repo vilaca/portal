@@ -27,6 +27,7 @@ import (
 	ctrlmanager "sigs.k8s.io/controller-runtime/pkg/manager"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	alertmanagerAction "github.com/vilaca/portal/internal/actions/alertmanager_action"
 	"github.com/vilaca/portal/internal/actions/annotate"
 	"github.com/vilaca/portal/internal/actions/engine"
 	"github.com/vilaca/portal/internal/actions/evict"
@@ -136,6 +137,14 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 			RetryAttempts: 3,
 			RetryBackoff:  200 * time.Millisecond,
 		})
+		// Back the alertmanager-typed action with the same sink. Without
+		// this, rules using `alert:` shorthand or an explicit alertmanager
+		// action have the dispatcher log "unknown action type" — the sink
+		// fires from the audit fan-out, but the action surface stays
+		// unwired.
+		if s := api.Sinks()["alertmanager"]; s != nil {
+			alertmanagerAction.Configure(s())
+		}
 	}
 	if dynClient != nil {
 		policyreport.Configure(dynClient)

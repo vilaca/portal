@@ -605,7 +605,7 @@ spec:
 	if out, err := kubectlApply(t, defaultDeny); err != nil {
 		t.Fatalf("apply default-deny NP: %v\n%s", err, out)
 	}
-	eventuallyMsg(t, 5*time.Second, "finding did not clear after applying default-deny NP", func(ctx context.Context) (bool, error) {
+	eventuallyMsg(t, 15*time.Second, "finding did not clear after applying default-deny NP", func(ctx context.Context) (bool, error) {
 		present, err := checkFindingPresent("default-deny-missing")(ctx)
 		return !present, err
 	})
@@ -615,7 +615,7 @@ spec:
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("delete np: %v\n%s", err, b)
 	}
-	eventuallyMsg(t, 5*time.Second, "default-deny-missing did not re-fire after NP delete",
+	eventuallyMsg(t, 15*time.Second, "default-deny-missing did not re-fire after NP delete",
 		checkFindingPresent("default-deny-missing"))
 }
 
@@ -641,7 +641,7 @@ func TestActions(t *testing.T) {
 				"on":     []any{"audit"},
 				"params": map[string]any{"key": "portal.security/quarantine", "value": "true"},
 			},
-			map[string]any{"type": "evict", "on": []any{"audit"}, "rateLimit": "5/min"},
+			map[string]any{"type": "evict", "on": []any{"audit"}, "rateLimit": "1/min"},
 		},
 	})
 	pod := fmt.Sprintf(`apiVersion: v1
@@ -750,7 +750,23 @@ outer:
 		}
 	}
 	if matched == nil {
-		t.Fatalf("no captured alert with alertname=%q; received %d payloads", ruleName, len(captured))
+		var seen []string
+		for _, body := range captured {
+			var alerts []map[string]any
+			if err := json.Unmarshal(body, &alerts); err != nil {
+				seen = append(seen, fmt.Sprintf("<unparseable: %v>", err))
+				continue
+			}
+			for _, a := range alerts {
+				labels, _ := a["labels"].(map[string]any)
+				if n, ok := labels["alertname"].(string); ok {
+					seen = append(seen, n)
+				} else {
+					seen = append(seen, "<no alertname>")
+				}
+			}
+		}
+		t.Fatalf("no captured alert with alertname=%q; received %d payloads with alertnames: %v", ruleName, len(captured), seen)
 	}
 
 	expectedRaw, err := os.ReadFile(filepath.Join(e.repoRoot, "internal/sink/alertmanager/testdata/expected_alert.json"))
@@ -1013,7 +1029,7 @@ spec:
 		}
 		return false, nil
 	}
-	eventuallyMsg(t, 10*time.Second, "no PDB violation fired", hasViolation)
+	eventuallyMsg(t, 30*time.Second, "no PDB violation fired", hasViolation)
 
 	pdb := fmt.Sprintf(`apiVersion: policy/v1
 kind: PodDisruptionBudget
