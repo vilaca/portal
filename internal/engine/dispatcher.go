@@ -143,7 +143,7 @@ func (d *dispatcher) Evaluate(ctx api.Context, meta api.EventMeta) []api.Violati
 		for _, r := range rules {
 			names = append(names, r.Name)
 		}
-		slog.Info("engine evaluate", "gvk", ctx.GVK.String(), "namespace", ns, "name", name, "ruleCount", len(rules), "rules", names)
+		slog.Debug("engine evaluate", "gvk", ctx.GVK.String(), "namespace", ns, "name", name, "ruleCount", len(rules), "rules", names)
 	}
 
 	if len(rules) == 0 {
@@ -165,14 +165,14 @@ func (d *dispatcher) Evaluate(ctx api.Context, meta api.EventMeta) []api.Violati
 		nsOK := namespaceAllowed(r.Match.Namespaces, ns)
 		if !nsOK {
 			if mode == api.ModeAdmission {
-				slog.Info("engine skip rule (namespace)", "rule", r.Name, "ns", ns, "include", r.Match.Namespaces.Include, "exclude", r.Match.Namespaces.Exclude)
+				slog.Debug("engine skip rule (namespace)", "rule", r.Name, "ns", ns, "include", r.Match.Namespaces.Include, "exclude", r.Match.Namespaces.Exclude)
 			}
 			continue
 		}
 		prog, err := d.programFor(r)
 		if err != nil {
 			if mode == api.ModeAdmission {
-				slog.Info("engine skip rule (compile)", "rule", r.Name, "err", err)
+				slog.Debug("engine skip rule (compile)", "rule", r.Name, "err", err)
 			}
 			continue
 		}
@@ -180,13 +180,13 @@ func (d *dispatcher) Evaluate(ctx api.Context, meta api.EventMeta) []api.Violati
 		if err != nil {
 			d.compileErrors.Store(r.Name, "eval: "+err.Error())
 			if mode == api.ModeAdmission {
-				slog.Info("engine skip rule (eval err)", "rule", r.Name, "err", err)
+				slog.Debug("engine skip rule (eval err)", "rule", r.Name, "err", err)
 			}
 			continue
 		}
 		if !ok {
 			if mode == api.ModeAdmission {
-				slog.Info("engine skip rule (eval false)", "rule", r.Name)
+				slog.Debug("engine skip rule (eval false)", "rule", r.Name)
 			}
 			continue
 		}

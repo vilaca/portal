@@ -100,8 +100,11 @@ func (b *Builder) BuildAll(obj *unstructured.Unstructured) ([]api.Context, error
 	eph, _, _ := unstructured.NestedSlice(podSpec, "ephemeralContainers")
 
 	if len(std) == 0 && len(initC) == 0 && len(eph) == 0 {
-		// Diagnostic: log the path we tried and what we got, so an empty
-		// container set has a trail (CI-only failure currently flying blind).
+		// Empty container set is anomalous for a pod-shaped GVK. Trace at
+		// Debug so it can be surfaced via log-level bump without producing
+		// per-request noise in production. Bump up the level on the binary
+		// (-log-level=debug) when investigating a "rule didn't fire" or
+		// "container is nil" report.
 		var podKeys, specKeys []string
 		for k := range obj.Object {
 			podKeys = append(podKeys, k)
@@ -109,7 +112,7 @@ func (b *Builder) BuildAll(obj *unstructured.Unstructured) ([]api.Context, error
 		for k := range podSpec {
 			specKeys = append(specKeys, k)
 		}
-		slog.Info("pod builder: no containers found",
+		slog.Debug("pod builder: no containers found",
 			"gvk", gvk.String(),
 			"name", obj.GetName(),
 			"namespace", obj.GetNamespace(),

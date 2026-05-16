@@ -434,29 +434,6 @@ func TestAdmissionDeny(t *testing.T) {
 		},
 		"rule": "container.securityContext.privileged == true",
 	})
-	// On failure, dump the rule's status + Portal pod logs so CI-only
-	// failures are diagnosable from the run output alone.
-	t.Cleanup(func() {
-		if !t.Failed() {
-			return
-		}
-		bg := context.Background()
-		if got, err := e.dyn.Resource(gvrPortalClusterRule).Get(bg, ruleName, metav1.GetOptions{}); err == nil {
-			if status, found, _ := unstructured.NestedMap(got.Object, "status"); found {
-				t.Logf("PortalClusterRule %q .status: %+v", ruleName, status)
-			} else {
-				t.Logf("PortalClusterRule %q has no .status", ruleName)
-			}
-		}
-		pods, _ := e.clientset.CoreV1().Pods(e.portalNs).List(bg, metav1.ListOptions{LabelSelector: "app.kubernetes.io/name=portal"})
-		for _, p := range pods.Items {
-			cmd := exec.Command("kubectl", "-n", e.portalNs, "logs", p.Name, "--tail=200")
-			cmd.Env = append(os.Environ(), "KUBECONFIG="+e.kubeconfig)
-			if b, err := cmd.CombinedOutput(); err == nil {
-				t.Logf("--- Portal pod %s logs (tail 200) ---\n%s", p.Name, string(b))
-			}
-		}
-	})
 	pod := fmt.Sprintf(`apiVersion: v1
 kind: Pod
 metadata: {name: priv, namespace: %s}

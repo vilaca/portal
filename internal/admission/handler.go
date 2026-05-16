@@ -212,10 +212,10 @@ func (h *handler) process(ctx context.Context, req *admissionv1.AdmissionRequest
 		allViolations = append(allViolations, v...)
 	}
 
-	// Diagnostic: per-request summary so an admission decision can be
-	// traced from the pod logs. INFO-level so it shows up in default
-	// log settings. Only fires once per request (not per context).
-	slog.Info("admission request",
+	// Per-request summary at Debug so an admission decision can still be
+	// traced when the engine log level is bumped, without spamming
+	// production logs at the default INFO threshold.
+	slog.Debug("admission request",
 		"gvk", gvk.String(),
 		"namespace", req.Namespace,
 		"name", req.Name,
