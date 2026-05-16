@@ -173,6 +173,13 @@ func plural(kind string) string {
 // watched GVK becomes a pseudo-object with two callables: byName(ns,name) and
 // list(ns,selector).
 //
+// Two keys are emitted per GVK so rule expressions can address resources by
+// either the disambiguated flat form (`cluster.<resource>.<version>.<group>`,
+// dot-separated single key — needed when two GVKs share a resource name
+// across groups) or the short simple-name alias (`cluster.<resource>` —
+// natural in expr-lang chain syntax). The alias is added only when the
+// simple name isn't already taken by another GVK.
+//
 // The result is intended to be merged into the per-evaluation env map under the
 // key "cluster". Callers that also want strong-consistency lookups should call
 // ToConsistentExprEnv(client, watched) and merge it under "consistentCluster".
@@ -183,7 +190,12 @@ func ToExprEnv(lookup api.Lookup) map[string]any {
 	}
 	for _, gvk := range lookup.Watched() {
 		captured := gvk
-		out[gvkKey(gvk)] = pseudoObject(lookup, captured)
+		obj := pseudoObject(lookup, captured)
+		out[gvkKey(gvk)] = obj
+		short := strings.ToLower(plural(gvk.Kind))
+		if _, taken := out[short]; !taken {
+			out[short] = obj
+		}
 	}
 	return out
 }

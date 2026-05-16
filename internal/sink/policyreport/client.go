@@ -94,20 +94,31 @@ func (s *sink) Name() string { return "policyreport" }
 func (s *sink) Close() error { return nil }
 
 // Emit upserts the Result for v into the appropriate (Cluster)PolicyReport.
+// A violation with Message=="resolved" deletes the corresponding Result
+// instead — that's how the network analyser tells consumers a previously
+// active finding has cleared.
 func (s *sink) Emit(ctx context.Context, v api.Violation) error {
-	res := buildResult(v)
 	key := resultKey{rule: v.Rule, namespace: v.Namespace, name: v.Name}
 
 	s.mu.Lock()
-	if v.Namespace == "" {
-		s.clResults[key] = res
-	} else {
-		ns, ok := s.nsResults[v.Namespace]
-		if !ok {
-			ns = map[resultKey]map[string]any{}
-			s.nsResults[v.Namespace] = ns
+	if v.Message == "resolved" {
+		if v.Namespace == "" {
+			delete(s.clResults, key)
+		} else if ns, ok := s.nsResults[v.Namespace]; ok {
+			delete(ns, key)
 		}
-		ns[key] = res
+	} else {
+		res := buildResult(v)
+		if v.Namespace == "" {
+			s.clResults[key] = res
+		} else {
+			ns, ok := s.nsResults[v.Namespace]
+			if !ok {
+				ns = map[resultKey]map[string]any{}
+				s.nsResults[v.Namespace] = ns
+			}
+			ns[key] = res
+		}
 	}
 	results := s.snapshotResults(v.Namespace)
 	s.mu.Unlock()

@@ -42,6 +42,7 @@ import (
 	_ "github.com/vilaca/portal/internal/context/pod"
 	ruleengine "github.com/vilaca/portal/internal/engine"
 	"github.com/vilaca/portal/internal/expr/exprlang"
+	"github.com/vilaca/portal/internal/lookup"
 	"github.com/vilaca/portal/internal/network"
 	"github.com/vilaca/portal/internal/rule"
 	"github.com/vilaca/portal/internal/rule/loader"
@@ -279,6 +280,14 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 		}
 		auditCtrl, _ = src.(*audit.Controller)
 		sources = append(sources, src)
+
+		// Wire cluster.<resource>.list/byName lookups into rule
+		// evaluation. The audit controller is the AuditCache; lookup
+		// binds to its informers; engine merges the resulting env
+		// under "cluster" on every Evaluate.
+		if setter, ok := ruleEng.(ruleengine.ClusterEnvSetter); ok && auditCtrl != nil {
+			setter.SetClusterEnv(lookup.ToExprEnv(lookup.New(auditCtrl)))
+		}
 	}
 
 	if opts.network {

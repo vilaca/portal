@@ -28,7 +28,12 @@ import (
 // expressions are cached by expression text in compiledByExpr to amortise
 // per-request compile cost. Eviction is implicit: any rule whose expression
 // disappears from the index simply stops being looked up.
-func New(idx api.RuleIndex, eng api.ExpressionEngine) (api.RuleEngine, error) {
+//
+// Optional clusterEnv is the cluster-lookup env map (typically built via
+// internal/lookup.ToExprEnv). When supplied, every Evaluate injects it as
+// the "cluster" key on the per-evaluation env so rule expressions can call
+// cluster.<resource>.list/byName(...).
+func New(idx api.RuleIndex, eng api.ExpressionEngine, opts ...Option) (api.RuleEngine, error) {
 	if idx == nil {
 		return nil, fmt.Errorf("engine.New: nil RuleIndex")
 	}
@@ -36,6 +41,9 @@ func New(idx api.RuleIndex, eng api.ExpressionEngine) (api.RuleEngine, error) {
 		return nil, fmt.Errorf("engine.New: nil ExpressionEngine")
 	}
 	d := &dispatcher{idx: idx, eng: eng}
+	for _, o := range opts {
+		o(d)
+	}
 	// Eagerly pre-compile every rule that's in the index at construction
 	// so callers see compile errors immediately via ParseError /
 	// CompileErrors. New rules added to the index later compile lazily on
@@ -49,12 +57,39 @@ func New(idx api.RuleIndex, eng api.ExpressionEngine) (api.RuleEngine, error) {
 	return d, nil
 }
 
+// Option configures dispatcher construction.
+type Option func(*dispatcher)
+
+// WithClusterEnv injects the cluster-lookup env map merged into ctx.Env
+// under the "cluster" key on every Evaluate. A nil or empty map disables
+// injection.
+func WithClusterEnv(env map[string]any) Option {
+	return func(d *dispatcher) { d.clusterEnv = env }
+}
+
+// ClusterEnvSetter is the optional surface the engine exposes when wire-up
+// needs to attach the cluster-lookup env after audit construction.
+type ClusterEnvSetter interface {
+	SetClusterEnv(env map[string]any)
+}
+
 type dispatcher struct {
 	idx api.RuleIndex
 	eng api.ExpressionEngine
 
+	clusterEnv map[string]any
+
 	compileErrors  sync.Map // rule name -> error string
 	compiledByExpr sync.Map // expression text -> api.Program
+}
+
+// SetClusterEnv attaches (or replaces) the cluster-lookup env that
+// Evaluate merges into ctx.Env under the "cluster" key. Safe to call once
+// at wire-up time, after the audit controller has materialised the
+// informer factory the lookup binds to. Not safe for concurrent use with
+// Evaluate.
+func (d *dispatcher) SetClusterEnv(env map[string]any) {
+	d.clusterEnv = env
 }
 
 // ParseError returns the compile error message for rule, or "" if the rule
@@ -105,6 +140,16 @@ func (d *dispatcher) Evaluate(ctx api.Context, meta api.EventMeta) []api.Violati
 	mode := modeFromSource(meta.Source)
 	container := containerNameFromEnv(ctx.Env)
 
+	evalCtx := ctx
+	if len(d.clusterEnv) > 0 {
+		augmented := make(map[string]any, len(ctx.Env)+1)
+		for k, v := range ctx.Env {
+			augmented[k] = v
+		}
+		augmented["cluster"] = d.clusterEnv
+		evalCtx.Env = augmented
+	}
+
 	out := make([]api.Violation, 0, len(rules))
 	for _, r := range rules {
 		if !namespaceAllowed(r.Match.Namespaces, ns) {
@@ -115,7 +160,7 @@ func (d *dispatcher) Evaluate(ctx api.Context, meta api.EventMeta) []api.Violati
 			// Compile error already recorded in programFor; skip rule.
 			continue
 		}
-		ok, err := prog.Eval(ctx)
+		ok, err := prog.Eval(evalCtx)
 		if err != nil {
 			d.compileErrors.Store(r.Name, "eval: "+err.Error())
 			continue
