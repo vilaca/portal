@@ -125,10 +125,23 @@ Added a `waitForRuleAbsent(t, name)` helper in `deploy/test/e2e_test.go` that po
 16. **PolicyReport sink upserted on every emit** — when a rule stopped firing, the previous Result lingered forever because nothing told the sink to remove it. The audit controller now tracks `(object, rule)` active sets and emits `Message="resolved"` when a rule stops firing for an object that previously triggered it; the PolicyReport sink deletes the matching Result on `resolved` emits.
 17. **TestRuleMigrationCompileLoop leaked rules into every later test** — the test kubectl-applied every example rule, including a deny-mode `privileged-container`, and never cleaned up. `TestAlertManagerJSON` and friends couldn't even create their test pods. Added a cleanup that deletes every applied rule + waits for absence.
 18. **`audit.RuleReconciler` rate limiter starved status writes at 1/sec** — bursts of CR applies blew through the budget and the e2e harness timed out waiting on `.status.lastApplied`. Bumped to 10/sec, burst 50.
-19. **No re-evaluation of dependent objects on cross-resource change** — when a PDB is added, rules referencing PDBs on Deployments don't re-fire because the Deployment didn't change. Deferred: walk `lookup.ExtractClusterRefs` on each rule at reload and re-enqueue dependent GVKs on cross-resource events. For now `TestCrossResource` annotates the Deployment to force re-evaluation.
 
 ---
 
-## 5. v1 GA status
+## 5. Known product gaps (deferred)
 
-The e2e suite is now **10 PASS / 1 SKIP / 0 FAIL** on a fresh `./deploy/test/kind.sh` run. The one skip is `TestAuditImmediacy`'s watch-reconnect assertion — see §2.1 for the methodology issue and what a real version of the test would look like. Item §4.19 (cross-resource re-evaluation) is the next product gap worth filing as a feature ticket; the test currently works around it with a Deployment touch.
+### 5.1 No re-evaluation of dependent objects on cross-resource change
+
+When a referenced cluster resource changes, dependent objects aren't re-audited. Concretely: a rule on Deployments that reads `cluster.poddisruptionbudgets.list(...)` only re-fires when the Deployment itself changes — adding or deleting a PDB doesn't propagate to the Deployment's audit pass, so PolicyReport entries based on the old PDB state linger until something else nudges the Deployment.
+
+**Why it matters:** Any rule that uses the `cluster.<resource>.list/byName(...)` lookup surface has this blind spot. Users will see stale violations whenever the *referenced* resource — not the rule's own match target — is what changed.
+
+**Proposed fix:** At rule reload, walk each rule's expression with `lookup.ExtractClusterRefs` to extract the set of referenced GVKs. Build a reverse index `referenced-GVK → rules-that-reference-it → match.gvk targets`. On every audit event for a referenced-GVK, look up the dependent target GVKs and re-enqueue audit work for every object of those GVKs in the affected namespace. The audit controller's existing `processItem` + active-violation diff already handles the "rule stopped firing → emit resolved" path, so the only new wiring is the dependency-aware enqueue.
+
+**Current workaround:** `TestCrossResource` annotates the Deployment after the PDB change to force an UPDATE event the audit informer reacts to. Production users can do the same, or wait for the next informer resync (default 10 min).
+
+---
+
+## 6. v1 GA status
+
+The e2e suite is now **10 PASS / 1 SKIP / 0 FAIL** on a fresh `./deploy/test/kind.sh` run. The one skip is `TestAuditImmediacy`'s watch-reconnect assertion — see §2.1 for the methodology issue and what a real version of the test would look like. The one known product gap is §5.1 (cross-resource re-evaluation) — worth filing as a feature ticket before tagging v0.1.0.
