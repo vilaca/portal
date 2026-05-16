@@ -9,6 +9,36 @@ written in [expr-lang](https://github.com/expr-lang/expr) and shipped as
 > may land before GA. See [`docs/v1-followups.md`](docs/v1-followups.md) for
 > the punchlist and known gaps.
 
+## Why Portal
+
+The Kubernetes policy space is crowded — OPA/Gatekeeper, Kyverno, Kubewarden,
+jsPolicy, Polaris, Falco, Tetragon. The full comparison lives at
+[`docs/comparison/feature-matrix.md`](docs/comparison/feature-matrix.md). The
+short version of Portal's wedge:
+
+- **One tool, three control points.** Admission (block at the API server),
+  watch-driven audit (catch drift and re-evaluate when *referenced* objects
+  change), and NetworkPolicy graph analysis — all from the same rule schema,
+  same expression engine, same `kubectl apply` workflow. Other tools cover
+  one or two of these; Portal covers all three.
+- **Rules are boolean expressions, not a DSL.** A privileged-container check
+  is ~8 lines of expr-lang. The Pod-shaped sugar (`container.securityContext.privileged`,
+  `spec.hostPID`, `metadata.labels`) is a deliberately narrow façade over the
+  raw object — the universal `object.*` escape hatch is always available.
+- **Response actions are first-class.** A rule can fire `label`, `annotate`,
+  `evict`, `patch-networkpolicy`, `revoke-sa-token`, or an AlertManager call
+  — idempotent and rate-limited — directly from a violation. Closest analogue
+  in the field is Kyverno + Falco + Falco Talon stitched together; Portal does
+  it in one binary.
+- **AlertManager-native output.** Admission verdicts and audit findings drop
+  onto an existing Prometheus + AlertManager pipeline without an adapter.
+  Pair with `PolicyReport` for dashboards, `portal_*` Prometheus metrics for
+  alerting, structured `slog` for logs.
+
+What Portal does **not** do today: mutation, image verification, generation,
+runtime detection (eBPF / kernel). For those, see the comparison doc — Kyverno,
+Cosign, Falco, and Tetragon are the right tools.
+
 ## What it does
 
 Three event sources, one rule language, one action pipeline:
@@ -68,11 +98,14 @@ Full walkthrough: [`docs/getting-started/quickstart-kind.md`](docs/getting-start
 
 ## Documentation
 
+- **Comparison vs the field:** [`docs/comparison/feature-matrix.md`](docs/comparison/feature-matrix.md)
+  — Portal next to OPA/Gatekeeper, Kyverno, Kubewarden, jsPolicy, Polaris,
+  Falco, Tetragon, plus a defense-in-depth reference stack.
 - **Design of record:** [`docs/POC-TO-PRODUCTION.md`](docs/POC-TO-PRODUCTION.md)
 - **Documentation site:** [`docs/README.md`](docs/README.md) — concepts, reference,
-  cookbook, migration from `podwatcher-poc`, operator runbooks, ADRs.
+  cookbook, operator runbooks, ADRs.
 - **CRD + Helm value reference:** [`docs/reference/`](docs/reference/)
-- **Migrating an existing rule corpus:** [`docs/migration/`](docs/migration/)
+- **Migrating a SpEL-style rule corpus:** [`docs/migration/`](docs/migration/)
   and the `portal migrate-rules` subcommand.
 
 ## Project status

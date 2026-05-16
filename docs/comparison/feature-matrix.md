@@ -1,11 +1,12 @@
 # Kubernetes Policy Tools — Feature Matrix
 
-A side-by-side comparison of the leading policy and security tools in the Kubernetes ecosystem.
+A side-by-side comparison of Portal and the leading policy and security tools in the Kubernetes ecosystem.
 
 ## Categories at a glance
 
 | Tool | Primary category | Stage |
 |------|------------------|-------|
+| **Portal** | Admission control + watch-driven audit + NetworkPolicy analysis + response actions | v0.1.0-alpha |
 | **OPA / Gatekeeper** | Admission control (validation + mutation) | CNCF Graduated (OPA) |
 | **Kyverno** | Admission control + resource lifecycle management | CNCF Incubating |
 | **Kubewarden** | Admission control (validation + mutation) | CNCF Sandbox |
@@ -14,43 +15,47 @@ A side-by-side comparison of the leading policy and security tools in the Kubern
 | **Falco** | Runtime security — detection | CNCF Graduated |
 | **Tetragon** | Runtime security — detection + enforcement | CNCF Incubating |
 
-> Admission-control tools intercept API requests *before* objects are persisted. Runtime tools observe the workload *after* it starts.
+> Admission-control tools intercept API requests *before* objects are persisted. Runtime tools observe the workload *after* it starts. Portal sits across admission, watch-driven audit, and a declarative NetworkPolicy analyser — see [the deep matrix](#deep-feature-matrix) for what that means in practice.
 
 ---
 
 ## Deep feature matrix
 
-| Feature | OPA / Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
-|---|---|---|---|---|---|---|---|
-| **Policy language** | Rego | YAML (Kyverno DSL), CEL, JMESPath | Rust, Go, Rego, Swift, JS/TS via WASM | JavaScript / TypeScript | YAML check config | Falco rules DSL (YAML) | Tracing Policy CRDs (YAML) + eBPF |
-| **Execution model** | Sidecar admission webhook | Native admission webhook | WASM runtime in cluster | Embedded Node.js sandbox | Static/CLI + dashboard | eBPF + kernel module / userspace | eBPF (kernel) |
-| **Validation** | Yes | Yes | Yes | Yes | Yes (audit only) | Yes (alert-only) | Yes |
-| **Mutation** | Yes (assign / modifyset) | Yes (powerful, JSON-patch + strategic merge) | Yes | Yes | No | No | No |
-| **Generation of new resources** | No | Yes (clone, generate, sync) | No | Limited (via JS) | No | No | No |
-| **Cleanup / TTL of resources** | No | Yes (CleanupPolicy) | No | No | No | No | No |
-| **Image verification (cosign/notary)** | Via custom Rego | Yes, native (verifyImages) | Yes (sigstore policies) | Via JS | No | No | No |
-| **Audit / background scan of existing objects** | Yes (constraint audit) | Yes (background scan) | Yes | Yes | Primary mode | N/A | N/A |
-| **Dry-run / report-only** | Yes (enforcementAction: dryrun/warn) | Yes (audit + Policy Report API) | Yes (monitor mode) | Yes | Yes (default) | N/A | Yes |
-| **Policy distribution** | ConstraintTemplate CRDs; OCI via external tooling | CRDs; native OCI registry support | OCI registry (artifacts.kubewarden.io) | CRDs / npm modules | Static config bundled | Falcoctl + OCI artifacts | CRDs |
-| **GitOps friendliness** | Strong (plain YAML CRDs) | Strong (plain YAML CRDs) | Strong (CRDs + OCI refs) | Strong | Strong | Moderate (rule files) | Strong |
-| **External data sources** | Yes (data.* documents, sync via Gatekeeper) | Yes (API calls, ConfigMaps, image registries, OCI) | Limited (host capabilities) | Yes (arbitrary JS / fetch) | No | Yes (plugins, k8s audit, etc.) | Limited |
-| **Runs Rego / OPA-bundle compatible** | Native | No | Partial (Rego policies run in WASM) | No | No | No | No |
-| **CEL support** | Indirect via K8s ValidatingAdmissionPolicy | Yes (first-class) | No | No | No | No | No |
-| **Native Policy Report (CNCF Policy WG)** | Via gatekeeper-policy-manager | Yes, first-class | Yes | Limited | Yes | No | No |
-| **Resource footprint** | Moderate (one OPA pod per replica) | Light-to-moderate | Light (WASM, per-policy server) | Light (Node.js) | Negligible (audit-only) | Light per node (DaemonSet) | Very light (eBPF in kernel) |
-| **Performance characteristics** | Rego eval can be slow on complex policies; partial eval helps | Generally faster than Rego for typical checks | Near-native (WASM JIT) | V8 engine; fast for JS workloads | N/A (offline) | Microsecond per event in kernel | Kernel-level, lowest overhead |
-| **Learning curve** | Steep (Rego is a new paradigm) | Low–moderate (YAML, familiar) | Varies by chosen language | Low (JS/TS) | Very low | Moderate (DSL + sys-calls knowledge) | Moderate–high (eBPF concepts) |
-| **Runtime threat detection** | No | No | No | No | No | Yes (syscalls, K8s audit, container events) | Yes (process, network, file, capability) |
-| **Runtime enforcement (block/kill)** | No | No | No | No | No | Limited (via reaction tooling) | Yes (signal/override syscalls) |
-| **Multi-cluster / fleet support** | Via Gatekeeper Policy Library or Rancher/ACK add-ons | Native (Kyverno multi-tenancy) | Yes (CRD-driven) | Yes | Via CLI batches | Falcosidekick, Falco Talon | Yes |
-| **Maturity / production usage** | Highest among admission tools | Very high, growing fastest | Growing | Niche | Wide for audit/CI | Highest among runtime tools | Newer but rapidly growing |
-| **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
-| **Maintainer** | Styra + community | Nirmata + community | SUSE + community | Loft Labs | Fairwinds | Sysdig + community | Isovalent (now Cisco) + community |
+| Feature | **Portal** | OPA / Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
+|---|---|---|---|---|---|---|---|---|
+| **Policy language** | `expr-lang/expr` (terse, null-safe, set literals) | Rego | YAML (Kyverno DSL), CEL, JMESPath | Rust, Go, Rego, Swift, JS/TS via WASM | JavaScript / TypeScript | YAML check config | Falco rules DSL (YAML) | Tracing Policy CRDs (YAML) + eBPF |
+| **Execution model** | Single Go binary: admission webhook + audit informers + NP analyser + action engine | Sidecar admission webhook | Native admission webhook | WASM runtime in cluster | Embedded Node.js sandbox | Static/CLI + dashboard | eBPF + kernel module / userspace | eBPF (kernel) |
+| **Validation** | Yes (`deny`/`warn`/`dryrun`) | Yes | Yes | Yes | Yes | Yes (audit only) | Yes (alert-only) | Yes |
+| **Mutation** | No (out of scope for v1) | Yes (assign / modifyset) | Yes (powerful, JSON-patch + strategic merge) | Yes | Yes | No | No | No |
+| **Generation of new resources** | No | No | Yes (clone, generate, sync) | No | Limited (via JS) | No | No | No |
+| **Cleanup / TTL of resources** | No | No | Yes (CleanupPolicy) | No | No | No | No | No |
+| **Image verification (cosign/notary)** | No (v3 candidate) | Via custom Rego | Yes, native (verifyImages) | Yes (sigstore policies) | Via JS | No | No | No |
+| **Audit / background scan of existing objects** | Yes — informer/watch-driven, never polls | Yes (constraint audit) | Yes (background scan) | Yes | Yes | Primary mode | N/A | N/A |
+| **Cross-resource policy (read other live objects from a rule)** | Yes — `cluster.<resource>.list/byName(...)` over informer caches | Via `data.*` sync | Via context / API calls | Limited | Via JS fetch | No | N/A | N/A |
+| **Static NetworkPolicy analysis** | Yes (built-in: default-deny-missing, broad-CIDR, unreachable-selector, policy-without-targets) | No (write your own) | No (write your own) | No | No | No | No | No |
+| **Response actions on a violation** | Yes (label / annotate / evict / patch NP / revoke SA token / AlertManager, all idempotent + rate-limited) | No | No | No | No | No | Limited (via Talon) | Yes (kernel SIGKILL/override) |
+| **Dry-run / report-only** | Yes (`enforcementAction: dryrun`) | Yes | Yes | Yes (monitor mode) | Yes | Yes (default) | N/A | Yes |
+| **Policy distribution** | CRDs (`PortalClusterRule`, `PortalRule`) + folder-loader fallback | ConstraintTemplate CRDs; OCI via external tooling | CRDs; native OCI registry support | OCI registry (artifacts.kubewarden.io) | CRDs / npm modules | Static config bundled | Falcoctl + OCI artifacts | CRDs |
+| **GitOps friendliness** | Strong (CRDs `kubectl apply`able; `.status.parseError` on each rule) | Strong (plain YAML CRDs) | Strong (plain YAML CRDs) | Strong (CRDs + OCI refs) | Strong | Strong | Moderate (rule files) | Strong |
+| **AlertManager-native output** | Yes (drops onto an existing Prometheus route without an adapter) | No | No | No | No | No | Via Falcosidekick | No |
+| **PolicyReport CRD output** | Yes | Via gatekeeper-policy-manager | Yes, first-class | Yes | Limited | Yes | No | No |
+| **Pluggable expression engine** | Yes (`ExpressionEngine` iface; CEL/Rego/starlark drop-in v3) | No (Rego is the engine) | Yes (pattern / CEL / deny / JMESPath) | Yes (WASM) | No | No | No | No |
+| **CEL support** | Pluggable (v3) | Indirect via K8s ValidatingAdmissionPolicy | Yes (first-class) | No | No | No | No | No |
+| **Resource footprint** | ~30 MB Go (admission + audit + NP analyser in one pod) | Moderate (one OPA pod per replica) | Light-to-moderate | Light (WASM, per-policy server) | Light (Node.js) | Negligible (audit-only) | Light per node (DaemonSet) | Very light (eBPF in kernel) |
+| **Performance characteristics** | Sub-20 ms p99 admission (compiled expr-lang VM in-process); sub-1 s p99 audit event→action | Rego eval can be slow on complex policies; partial eval helps | Generally faster than Rego for typical checks | Near-native (WASM JIT) | V8 engine; fast for JS workloads | N/A (offline) | Microsecond per event in kernel | Kernel-level, lowest overhead |
+| **Learning curve** | Low — boolean expressions over a Pod-shaped env; one schema for all event sources | Steep (Rego is a new paradigm) | Low–moderate (YAML, familiar) | Varies by chosen language | Low (JS/TS) | Very low | Moderate (DSL + sys-calls knowledge) | Moderate–high (eBPF concepts) |
+| **Runtime threat detection** | v2 (K8s API audit log) | No | No | No | No | No | Yes (syscalls, K8s audit, container events) | Yes (process, network, file, capability) |
+| **Runtime enforcement (block/kill)** | v2 — response-based (the same action engine, fed by audit-log events) | No | No | No | No | No | Limited (via reaction tooling) | Yes (signal/override syscalls) |
+| **Multi-cluster / fleet support** | Per-cluster install | Via Gatekeeper Policy Library or Rancher/ACK add-ons | Native (Kyverno multi-tenancy) | Yes (CRD-driven) | Yes | Via CLI batches | Falcosidekick, Falco Talon | Yes |
+| **Maturity / production usage** | Early alpha — no production deployments yet | Highest among admission tools | Very high, growing fastest | Growing | Niche | Wide for audit/CI | Highest among runtime tools | Newer but rapidly growing |
+| **License** | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 | Apache 2.0 |
+| **Maintainer** | Independent | Styra + community | Nirmata + community | SUSE + community | Loft Labs | Fairwinds | Sysdig + community | Isovalent (now Cisco) + community |
 
 ---
 
 ## When to pick which
 
+- **One tool spanning admission + audit + NetworkPolicy hygiene + automated response**, with terse boolean rules, AlertManager-native output, and the same rule firing in admission and audit → **Portal**. Trade-off: alpha maturity, no mutation, no image verification yet.
 - **Pure admission validation across many domains** with the richest expression power → **OPA/Gatekeeper** (if your team can absorb Rego) or **Kyverno** (if not).
 - **Heavy mutation, generation, image verification, cleanup** → **Kyverno**. It's the most "batteries-included" admission tool.
 - **Polyglot teams who don't want a DSL** → **Kubewarden** (any WASM-compilable language) or **jsPolicy** (JS/TS).
@@ -99,11 +104,11 @@ Three structural reasons admission-only is not enough:
 
 | Tool | Name for the audit loop | Output |
 |---|---|---|
+| **Portal** | Informer/watch audit loop (`--audit`); same rules as admission | `PolicyReport` + AlertManager + Prometheus + actions |
 | Gatekeeper | Constraint audit | `Constraint.status.violations`, `gatekeeper_violations` metric |
 | Kyverno | Background scan | `PolicyReport` / `ClusterPolicyReport` CRDs |
 | Kubewarden | Audit Scanner | `PolicyReport` CRDs |
 | Polaris | Default mode (no admission loop) | Dashboard, JSON, exit code |
-| PodWatcher-POC | Periodic scan (only mode) | AlertManager + Prometheus metrics |
 
 Functionally they are interchangeable for the "list and re-evaluate" job. They differ in what they emit (CRD vs metric vs alert) and in whether the same tool also enforces at admission time.
 
@@ -120,9 +125,9 @@ No single policy tool covers the full attack surface of a Kubernetes cluster. A 
 | **1. Author-time** | Editor, pre-commit | Obvious misconfig in YAML before it's committed | Anything dynamic; anything authored elsewhere | `kubeconform`, `kube-linter`, `checkov`, IDE plugins |
 | **2. CI / pipeline** | Pull request, build | Policy violations in manifests, Helm charts, Kustomize output, IaC | Cluster-state drift; out-of-band `kubectl apply` | **Polaris** (CLI), **Conftest** (Rego), Kyverno CLI, Datree successors, Checkov |
 | **3. Supply chain** | Image build, registry push | Unsigned images, known CVEs, malicious base layers, SBOM violations | Zero-days; runtime tampering | Cosign / Sigstore, Trivy, Grype, Notary v2 |
-| **4. Admission** | API server request, before persistence | Privileged pods, hostPath mounts, missing labels, unsigned images, forbidden APIs | Anything that happens *after* the pod starts | **OPA/Gatekeeper**, **Kyverno**, **Kubewarden**, **jsPolicy**, K8s `ValidatingAdmissionPolicy` (CEL) |
-| **5. In-cluster posture / continuous audit** | Periodic, against live cluster state | Drift from baseline, newly non-compliant objects, RBAC sprawl, abandoned secrets | Active exploitation | Kyverno background scan, Gatekeeper audit, **Polaris** dashboard, kube-bench, kubescape |
-| **6. Network policy** | Every packet | East-west lateral movement, unexpected egress, DNS exfiltration | Anything within an allowed flow | Cilium, Calico, native `NetworkPolicy` |
+| **4. Admission** | API server request, before persistence | Privileged pods, hostPath mounts, missing labels, unsigned images, forbidden APIs | Anything that happens *after* the pod starts | **Portal**, **OPA/Gatekeeper**, **Kyverno**, **Kubewarden**, **jsPolicy**, K8s `ValidatingAdmissionPolicy` (CEL) |
+| **5. In-cluster posture / continuous audit** | Watch/event-driven re-evaluation against live cluster state | Drift from baseline, newly non-compliant objects, RBAC sprawl, abandoned secrets | Active exploitation | **Portal** (`--audit`), Kyverno background scan, Gatekeeper audit, **Polaris** dashboard, kube-bench, kubescape |
+| **6. Network policy** | Every packet, plus *static* NetworkPolicy graph analysis | East-west lateral movement, unexpected egress, DNS exfiltration, *and* gaps in the declared NP graph (default-deny missing, unreachable selectors) | Anything within an allowed flow | Cilium, Calico, native `NetworkPolicy`, **Portal** (`--network` for static graph checks) |
 | **7. Runtime detection** | Live syscalls and events | Shells in containers, crypto-miners, sensitive file reads, privilege escalation | Configuration mistakes; the breach itself if alerting is slow | **Falco**, **Tetragon** (detection mode), Tracee |
 | **8. Runtime enforcement** | Live syscalls, in-kernel | The malicious syscall itself, in microseconds | Anything the policy didn't anticipate | **Tetragon** (`Sigkill` / `Override`), Falco + Talon (slower, userspace) |
 

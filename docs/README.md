@@ -1,6 +1,8 @@
 # Portal documentation
 
-Portal is the productised successor to `podwatcher-poc`: a Go admission webhook, informer-driven audit loop, and declarative NetworkPolicy analyser, with a built-in response-action engine. Rules are written in [`expr-lang/expr`](https://github.com/expr-lang/expr); rule distribution is `PortalClusterRule` / `PortalRule` CRDs with a folder-loader fallback.
+Portal is a Go admission webhook, informer-driven audit loop, and declarative NetworkPolicy analyser, with a built-in response-action engine. Rules are written in [`expr-lang/expr`](https://github.com/expr-lang/expr); rule distribution is `PortalClusterRule` / `PortalRule` CRDs with a folder-loader fallback.
+
+The design originated in `podwatcher-poc`, an internal proof-of-concept that informed the v1 architecture; see [POC-TO-PRODUCTION.md](POC-TO-PRODUCTION.md) for the rationale.
 
 ## Documentation map
 
@@ -15,8 +17,8 @@ Portal is the productised successor to `podwatcher-poc`: a Go admission webhook,
 | [plugin-author/](plugin-author/) | Add a custom action, sink, or expression engine |
 | [contributing/](contributing/) | Repo layout, module boundaries, testing, release process |
 | [adr/](adr/) | Architecture Decision Records |
-| [migration/](migration/) | From `podwatcher-poc`; side-by-side rule syntax; coexistence with Kyverno |
-| [comparison/](comparison/) | Feature matrix vs the field; Portal-vs-podwatcher comparison |
+| [migration/](migration/) | Side-by-side rule syntax (`podwatcher-poc` → Portal); coexistence with Kyverno |
+| [comparison/](comparison/) | Feature matrix vs the field; rule-syntax delta against the original `podwatcher-poc` |
 
 ## 5-minute start
 
@@ -24,4 +26,4 @@ See [getting-started/quickstart-kind.md](getting-started/quickstart-kind.md).
 
 ## Source of truth
 
-The canonical v1 design — the record of how `podwatcher-poc` was productised into Portal — lives in [POC-TO-PRODUCTION.md](POC-TO-PRODUCTION.md). When this site and that document disagree, the productisation note wins until the docs are corrected.
+The canonical v1 design lives in [POC-TO-PRODUCTION.md](POC-TO-PRODUCTION.md). When this site and that document disagree, the design note wins until the docs are corrected.

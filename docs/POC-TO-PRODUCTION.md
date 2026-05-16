@@ -1,28 +1,28 @@
-# Portal — an evolution of podwatcher-poc
+# Portal — v1 design rationale
 
 ## Context
 
-`podwatcher-poc` is a Java/SpEL layer-5 pod-only continuous-audit scanner: it polls the K8s API, runs SpEL rules over a normalised `Context`, and fires AlertManager alerts. It cannot prevent anything, it sees pods only, polling is slow at scale, and ecosystem integration (PolicyReport CRDs, admission) is absent.
+Portal is a Kubernetes admission webhook, informer-driven audit loop, and declarative NetworkPolicy analyser, with a built-in response-action engine.
 
-Portal is the productised successor:
+The v1 architecture was prototyped first as `podwatcher-poc` — a private Java/SpEL pod-only continuous-audit scanner that polled the K8s API, evaluated SpEL rules over a normalised `Context`, and fired AlertManager alerts. The POC validated the rule-shape ergonomics but had no admission capability, no cross-resource awareness, no NetworkPolicy graph reasoning, and no enforcement actions beyond an alert. Portal is the v1 implementation that takes those validated pieces forward into a production-shaped tool:
 
-- **Language pivot to Go + `expr-lang/expr`.** The SpEL rule-language ergonomics (terse, null-safe, set literals) are preserved syntactically by `expr-lang/expr`; the K8s plumbing moves to `client-go`/`controller-runtime`, the natural ecosystem for admission webhooks and informers. Cross-checked against the six podwatcher-poc example rules: four translate byte-for-byte, two need `.contains()` → `in` — trivial migration.
-- **Layer pivot from 5 to 4+5+6 in v1, 7 in v2.** Admission webhook, informer-driven audit (no polling), static NetworkPolicy analyser, and a response-action engine generalised from podwatcher-poc's existing AlertManager call.
+- **Go + `expr-lang/expr`.** Preserves the SpEL rule-language ergonomics (terse, null-safe, set literals) syntactically; the K8s plumbing is `client-go` / `controller-runtime`, the natural ecosystem for admission webhooks and informers.
+- **Layer coverage 4 + 5 + 6 in v1 (7 in v2).** Admission webhook, informer-driven audit (no polling), static NetworkPolicy analyser, and a response-action engine.
 
 ## Scope decisions (confirmed with user)
 
 | Decision | Choice |
 |---|---|
 | Language / runtime | **Go** (1.22+), single static binary, distroless or scratch image |
-| Expression engine | **`github.com/expr-lang/expr`** — adopted directly. Existing podwatcher-poc rule files migrated with a one-time syntax fixup script (4/6 unchanged, 2/6 swap `.contains()` for `in`) |
+| Expression engine | **`github.com/expr-lang/expr`** — terse, null-safe, with set literals. A `portal migrate-rules` subcommand rewrites the small set of SpEL rules from the prior POC into expr-lang syntax. |
 | K8s client | `client-go` + `controller-runtime` informers; `kubernetes-sigs/controller-runtime/pkg/webhook` for admission |
 | Platform | Kubernetes only — drop Docker daemon mode |
 | v1 layers | 4 (admission) + 5 (continuous audit, opt-in) + 6 (declarative NetworkPolicy analysis, event-driven) |
 | Cross-resource policies | **Full v1.** `cluster.<gvk>.byName(ns,name)` and `cluster.<gvk>.list(ns,selector)` exposed to expr-lang, backed by informer caches. Reverse-dependency index re-evaluates dependents when referenced resources change. Cycle protection via bounded re-eval budget. Admission consistency via virtual cluster view (inbound object materialised into the read path) |
-| Rule distribution | **CRDs primary + folder fallback.** `PortalClusterRule` (cluster-scoped) and `PortalRule` (namespaced) as the canonical surface — `kubectl apply`, K8s RBAC, GitOps-native, `.status` reporting per rule. `--rules-folder` flag retained for dev, podwatcher-poc migration, and bootstrap. `portal migrate-rules` writes CRs by default, folder format on `--format=folder` |
-| Webhook failure mode | **Fail-closed default (`failurePolicy: Fail`).** Portal becomes part of the API server's critical path; ≥2 replicas + PDB mandatory. `kube-system`, `kube-public`, `kube-node-lease`, and Portal's own namespace excluded via `namespaceSelector`. `timeoutSeconds: 5`. Break-glass bypass via `portal.io/bypass=true` annotation, audited. Helm `global.failClosed: false` available for teams who prefer podwatcher-poc's "if it dies, cluster is fine" property |
+| Rule distribution | **CRDs primary + folder fallback.** `PortalClusterRule` (cluster-scoped) and `PortalRule` (namespaced) as the canonical surface — `kubectl apply`, K8s RBAC, GitOps-native, `.status` reporting per rule. `--rules-folder` flag retained for dev, fixtures, and bootstrap. `portal migrate-rules` writes CRs by default, folder format on `--format=folder` |
+| Webhook failure mode | **Fail-closed default (`failurePolicy: Fail`).** Portal becomes part of the API server's critical path; ≥2 replicas + PDB mandatory. `kube-system`, `kube-public`, `kube-node-lease`, and Portal's own namespace excluded via `namespaceSelector`. `timeoutSeconds: 5`. Break-glass bypass via `portal.io/bypass=true` annotation, audited. Helm `global.failClosed: false` available for teams that prefer a non-blocking failure mode. |
 | Admission capabilities | Validation only, per-rule `enforcementAction: deny \| warn \| dryrun` |
-| Resource scope | Any K8s GVK. `object.*` (raw `unstructured.Unstructured`) is always available as the universal accessor. Pod-shaped sugar (`container.*`, `spec.host*`, `securityContext.*`, `metadata.*`) is a **deliberately narrow façade matching podwatcher-poc's surface** — not a typed mirror of `v1.Pod`. Anything outside the sugar reaches `object.*` |
+| Resource scope | Any K8s GVK. `object.*` (raw `unstructured.Unstructured`) is always available as the universal accessor. Pod-shaped sugar (`container.*`, `spec.host*`, `securityContext.*`, `metadata.*`) is a **deliberately narrow façade** covering the fields rule authors hit most often — not a typed mirror of `v1.Pod`. Anything outside the sugar reaches `object.*` |
 | Output channels | Admission response, PolicyReport CRD (`wgpolicyk8s.io/v1alpha2`), AlertManager, Prometheus |
 | Audit loop | Opt-in via flag; **informer/watch-based, never polling**. p99 < 1 s event→action |
 | Latency targets | Admission decision p99 < 20 ms (Go in-process eval); audit event→action dispatch p99 < 1 s |
@@ -31,76 +31,75 @@ Portal is the productised successor:
 | v2 layer 7 | K8s API audit log as a new event source, feeds same v1 action engine. No eBPF in Portal |
 | v3+ | Tetragon/Falco event consumer, mutation rules, alternate engines (CEL/starlark) alongside expr-lang |
 
-## Comparison matrix: Portal vs podwatcher-poc vs the field
+## Comparison matrix: Portal vs the field
 
-Positioning Portal against podwatcher-poc and the seven tools in `/Users/vilaca/work/portal/docs/feature-matrix.md` (OPA/Gatekeeper, Kyverno, Kubewarden, jsPolicy, Polaris, Falco, Tetragon).
+Positioning Portal against the seven tools most commonly compared with it: OPA/Gatekeeper, Kyverno, Kubewarden, jsPolicy, Polaris, Falco, Tetragon.
 
 ### Category & stack
 
-| | **Portal (v1)** | **podwatcher-poc** | OPA/Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
-|---|---|---|---|---|---|---|---|---|---|
-| Primary layer | **4 + 5 + 6** | 5 | 4 + 5 | 4 + 5 | 4 | 4 | 2 + 5 | 7 | 7 + 8 |
-| Language / runtime | **Go** static binary | Java / JVM | Go | Go | Rust (WASM host) | Node.js | Go (CLI + dashboard) | C / eBPF | Go + eBPF |
-| Rule language | **expr-lang/expr** | SpEL | Rego | YAML DSL + CEL | Rust/Go/Rego/Swift/JS via WASM | JS/TS | YAML toggles | Falco rules DSL | TracingPolicy CRD + eBPF |
-| Stage / maturity | Greenfield (POC successor) | POC | CNCF Graduated | CNCF Incubating | CNCF Sandbox | Community (Loft) | Community (Fairwinds) | CNCF Graduated | CNCF Incubating |
+| | **Portal (v1)** | OPA/Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
+|---|---|---|---|---|---|---|---|---|
+| Primary layer | **4 + 5 + 6** | 4 + 5 | 4 + 5 | 4 | 4 | 2 + 5 | 7 | 7 + 8 |
+| Language / runtime | **Go** static binary | Go | Go | Rust (WASM host) | Node.js | Go (CLI + dashboard) | C / eBPF | Go + eBPF |
+| Rule language | **expr-lang/expr** | Rego | YAML DSL + CEL | Rust/Go/Rego/Swift/JS via WASM | JS/TS | YAML toggles | Falco rules DSL | TracingPolicy CRD + eBPF |
+| Stage / maturity | v0.1.0-alpha | CNCF Graduated | CNCF Incubating | CNCF Sandbox | Community (Loft) | Community (Fairwinds) | CNCF Graduated | CNCF Incubating |
 
 ### Capabilities
 
-| | **Portal (v1)** | **podwatcher-poc** | OPA/Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
-|---|---|---|---|---|---|---|---|---|---|
-| Admission validation | **Yes** (`deny`/`warn`/`dryrun`) | No | Yes | Yes | Yes | Yes | No | No | No |
-| Admission mutation | No (v3 maybe) | No | Yes | Yes (strong) | Yes | Yes | No | No | No |
-| Resource generation / cleanup | No | No | No / No | Yes / Yes | No / No | Limited | No | No | No |
-| Continuous audit (live state) | **Yes — informer/watch, never poll** | Yes — poll | Yes — constraint audit | Yes — background scan | Yes — Audit Scanner | Yes | Primary mode | N/A | N/A |
-| Resource scope | **Any GVK** (`object.*`); pod sugar for compat | Pods + containers only | Any K8s object | Any K8s object | Any K8s object | Any K8s object | Workloads | Live processes | Live processes |
-| Cross-resource policies | **Yes (v1)** — `cluster.<gvk>.*` helpers + reverse-dep index | No | Yes | Yes | Limited | Yes | Limited | N/A | N/A |
-| Image signature verification | No (v3 candidate) | No | Custom Rego | Yes (native) | Yes (sigstore) | Via JS | No | No | No |
-| Static NetworkPolicy analysis | **Yes (built-in)** | No | No (write your own) | No (write your own) | No | No | No | No | No |
-| Runtime detection | **v2** — K8s API audit log source | No | No | No | No | No | No | Yes (syscalls, kaudit) | Yes (process, net, file) |
-| Runtime enforcement | **v2 — response-based** (label, evict, patch NP, revoke SA token) | No | No | No | No | No | No | Limited via Talon | Yes (kernel: `SIGKILL`, override) |
-| Cross-resource action (e.g. NP patch on violation) | **Yes (v1)** | No (alert only) | No | No | No | No | No | No | No |
+| | **Portal (v1)** | OPA/Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
+|---|---|---|---|---|---|---|---|---|
+| Admission validation | **Yes** (`deny`/`warn`/`dryrun`) | Yes | Yes | Yes | Yes | No | No | No |
+| Admission mutation | No (v3 maybe) | Yes | Yes (strong) | Yes | Yes | No | No | No |
+| Resource generation / cleanup | No | No / No | Yes / Yes | No / No | Limited | No | No | No |
+| Continuous audit (live state) | **Yes — informer/watch, never poll** | Yes — constraint audit | Yes — background scan | Yes — Audit Scanner | Yes | Primary mode | N/A | N/A |
+| Resource scope | **Any GVK** (`object.*`); pod sugar | Any K8s object | Any K8s object | Any K8s object | Any K8s object | Workloads | Live processes | Live processes |
+| Cross-resource policies | **Yes (v1)** — `cluster.<gvk>.*` helpers + reverse-dep index | Yes | Yes | Limited | Yes | Limited | N/A | N/A |
+| Image signature verification | No (v3 candidate) | Custom Rego | Yes (native) | Yes (sigstore) | Via JS | No | No | No |
+| Static NetworkPolicy analysis | **Yes (built-in)** | No (write your own) | No (write your own) | No | No | No | No | No |
+| Runtime detection | **v2** — K8s API audit log source | No | No | No | No | No | Yes (syscalls, kaudit) | Yes (process, net, file) |
+| Runtime enforcement | **v2 — response-based** (label, evict, patch NP, revoke SA token) | No | No | No | No | No | Limited via Talon | Yes (kernel: `SIGKILL`, override) |
+| Cross-resource action (e.g. NP patch on violation) | **Yes (v1)** | No | No | No | No | No | No | No |
 
 ### Outputs & integration
 
-| | **Portal (v1)** | **podwatcher-poc** | OPA/Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
-|---|---|---|---|---|---|---|---|---|---|
-| AlertManager (native) | **Yes** (drop-in compat with podwatcher's JSON) | Yes | No | No | No | No | No | Via sidekick | No |
-| PolicyReport CRD | **Yes** | No | Via gatekeeper-policy-manager | Yes (first-class) | Yes | Limited | Yes | No | No |
-| Admission denial in `kubectl` | **Yes** | N/A | Yes | Yes | Yes | Yes | N/A | N/A | N/A |
-| Prometheus metrics | **Yes** | Yes | Yes | Yes | Yes | Some | No | Via exporters | Yes |
-| Structured JSON logs | **Yes (`slog`)** | Yes (Log4j2) | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| GitOps friendliness | YAML rules in folder | YAML rules in folder | CRDs | CRDs | CRDs + OCI | CRDs / npm | Static config | Rule files | CRDs |
+| | **Portal (v1)** | OPA/Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
+|---|---|---|---|---|---|---|---|---|
+| AlertManager (native) | **Yes** | No | No | No | No | No | Via sidekick | No |
+| PolicyReport CRD | **Yes** | Via gatekeeper-policy-manager | Yes (first-class) | Yes | Limited | Yes | No | No |
+| Admission denial in `kubectl` | **Yes** | Yes | Yes | Yes | Yes | N/A | N/A | N/A |
+| Prometheus metrics | **Yes** | Yes | Yes | Yes | Some | No | Via exporters | Yes |
+| Structured JSON logs | **Yes (`slog`)** | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| GitOps friendliness | CRDs + folder fallback | CRDs | CRDs | CRDs + OCI | CRDs / npm | Static config | Rule files | CRDs |
 
 ### Operational profile
 
-| | **Portal (v1)** | **podwatcher-poc** | OPA/Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
-|---|---|---|---|---|---|---|---|---|---|
-| Watch vs poll for audit | **Watch (informers)** | Poll (list every cycle) | Watch | Watch | Watch | Watch | One-shot | Stream (kernel) | Stream (kernel) |
-| Latency to detect (admission) | Real-time (< 20 ms p99 budget) | N/A | Real-time | Real-time | Real-time | Real-time | N/A | N/A | N/A |
-| Latency to detect (audit) | Real-time event-driven (< 1 s p99 budget) | Up to one poll interval | Real-time (event) | Real-time (event) | Real-time | Real-time | Manual / CI | µs (kernel) | µs (kernel) |
-| Memory footprint (webhook) | ~30 MB (Go) | N/A | Moderate (OPA pod per replica) | Light–moderate | Light (WASM) | Light (Node) | N/A | Light per node | Very light (eBPF) |
-| Failure mode | **Fail-closed default** (`failurePolicy: Fail`); `global.failClosed: false` for fail-open. System namespaces always excluded | Cluster unaffected | Configurable | Configurable | Configurable | Configurable | N/A | Cluster unaffected | Cluster unaffected |
-| HA story | Lease-based leader election; informers on all replicas | None documented | Standard | Standard | Standard | Standard | N/A | DaemonSet | DaemonSet |
-| Multi-cluster | Per-cluster install | Per-cluster install | Add-ons (Rancher/ACK) | Native multi-tenancy | Yes (CRDs) | Yes | Via CLI batches | Falcosidekick, Talon | Yes |
+| | **Portal (v1)** | OPA/Gatekeeper | Kyverno | Kubewarden | jsPolicy | Polaris | Falco | Tetragon |
+|---|---|---|---|---|---|---|---|---|
+| Watch vs poll for audit | **Watch (informers)** | Watch | Watch | Watch | Watch | One-shot | Stream (kernel) | Stream (kernel) |
+| Latency to detect (admission) | Real-time (< 20 ms p99 budget) | Real-time | Real-time | Real-time | Real-time | N/A | N/A | N/A |
+| Latency to detect (audit) | Real-time event-driven (< 1 s p99 budget) | Real-time (event) | Real-time (event) | Real-time | Real-time | Manual / CI | µs (kernel) | µs (kernel) |
+| Memory footprint (webhook) | ~30 MB (Go) | Moderate (OPA pod per replica) | Light–moderate | Light (WASM) | Light (Node) | N/A | Light per node | Very light (eBPF) |
+| Failure mode | **Fail-closed default** (`failurePolicy: Fail`); `global.failClosed: false` for fail-open. System namespaces always excluded | Configurable | Configurable | Configurable | Configurable | N/A | Cluster unaffected | Cluster unaffected |
+| HA story | Lease-based leader election; informers on all replicas | Standard | Standard | Standard | Standard | N/A | DaemonSet | DaemonSet |
+| Multi-cluster | Per-cluster install | Add-ons (Rancher/ACK) | Native multi-tenancy | Yes (CRDs) | Yes | Via CLI batches | Falcosidekick, Talon | Yes |
 
 ### Rule ergonomics (the wedge)
 
-| | **Portal** | **podwatcher-poc** | OPA/Gatekeeper | Kyverno (pattern) | Kyverno (CEL) | Polaris | Falco |
-|---|---|---|---|---|---|---|---|
-| "Block privileged container" lines | ~8 | ~8 | ~12 (Rego) | ~18 (pattern) | ~10 (CEL) | toggle | rule block |
-| Boilerplate per rule | metadata + boolean | metadata + boolean | template + constraint | apiVersion + spec wrappers | apiVersion + spec wrappers + CEL | none (fixed) | YAML + DSL |
-| Implicit container iteration | **Yes** (rule eval'd per std/init/ephem) | Yes | Manual | `foreach` / repeat blocks | `exists(c, ...)` | N/A | N/A |
-| Null-safe navigation | `?.` + `??` | `?.` + `?:` | `not / default` | `()` / `=()` anchors | `has(...) &&` | N/A | N/A |
-| Inline set literal | `x in ['a','b']` | `{'a','b'}.contains(x)` | set construct | N/A | `['a','b'].exists(...)` | N/A | N/A |
-| Engine swap without rule rewrite | **Yes** (`ExpressionEngine` iface; CEL/Rego pluggable v3) | No (SpEL embedded) | No (Rego is the engine) | Yes (pattern / CEL / deny / JMESPath) | — | No | No |
+| | **Portal** | OPA/Gatekeeper | Kyverno (pattern) | Kyverno (CEL) | Polaris | Falco |
+|---|---|---|---|---|---|---|
+| "Block privileged container" lines | ~8 | ~12 (Rego) | ~18 (pattern) | ~10 (CEL) | toggle | rule block |
+| Boilerplate per rule | metadata + boolean | template + constraint | apiVersion + spec wrappers | apiVersion + spec wrappers + CEL | none (fixed) | YAML + DSL |
+| Implicit container iteration | **Yes** (rule eval'd per std/init/ephem) | Manual | `foreach` / repeat blocks | `exists(c, ...)` | N/A | N/A |
+| Null-safe navigation | `?.` + `??` | `not / default` | `()` / `=()` anchors | `has(...) &&` | N/A | N/A |
+| Inline set literal | `x in ['a','b']` | set construct | N/A | `['a','b'].exists(...)` | N/A | N/A |
+| Engine swap without rule rewrite | **Yes** (`ExpressionEngine` iface; CEL/Rego pluggable v3) | No (Rego is the engine) | Yes (pattern / CEL / deny / JMESPath) | — | No | No |
 
 ### What Portal does that nobody in this matrix does
 
-- **Generalised response-action engine off admission and audit decisions.** AlertManager call → label → annotate → evict → patch NetworkPolicy → revoke SA token, all idempotent and rate-limited, all from the same rule schema. Closest analogue is Kyverno+Falco+Falco Talon stitched together; Portal does it in one binary.
-- **AlertManager-native admission tool.** Every other admission tool emits via PolicyReport, decision logs, or kubectl warnings only. Portal preserves podwatcher-poc's AlertManager JSON byte-for-byte so existing Prometheus routing keeps working when teams upgrade.
+- **Generalised response-action engine off admission and audit decisions.** AlertManager call → label → annotate → evict → patch NetworkPolicy → revoke SA token, all idempotent and rate-limited, all from the same rule schema. Closest analogue is Kyverno + Falco + Falco Talon stitched together; Portal does it in one binary.
+- **AlertManager-native admission tool.** Every other admission tool emits via PolicyReport, decision logs, or kubectl warnings only. Portal speaks AlertManager v2 natively so Prometheus routing reaches admission verdicts and audit findings without an adapter.
 - **Built-in static NetworkPolicy analysis as first-class output.** Other tools support writing such checks; Portal ships them out of the box (default-deny gaps, broad CIDRs, unreachable selectors) and emits them through the same PolicyReport/AlertManager pipeline.
 - **Pluggable expression engine behind a stable rule schema.** Rule files do not embed engine choice; expr-lang today, CEL/Rego/starlark drop-in for v3 without invalidating existing rules. Only Kyverno comes close (multi-engine `validate`), and Kyverno's surrounding YAML is far more verbose.
-- **Rule-corpus migration path from podwatcher-poc.** `portal migrate-rules` rewrites SpEL→expr-lang differences (`.contains()` → `in`, brace-sets → bracket-lists, `filter.namespace` → `match.namespaces`). 4/6 example rules transfer byte-identical; the other 2 are one-line tweaks. No other admission tool has a documented migration path from a different rule language.
 
 ### What Portal does *not* do (vs the field)
 
@@ -270,8 +269,8 @@ Go module: `github.com/vilaca/portal` (or similar). Package layout:
 | `internal/lookup` | Cluster lookup helpers exposed to expr-lang as `cluster.<gvk>.byName(ns,name)` / `cluster.<gvk>.list(ns,selector)`. Reverse-dependency index — records what each (rule, object) read; on referenced-resource change, enqueues re-eval of dependents. Cycle protection via bounded re-eval budget per object per window. Admission virtual-cluster view (inbound object materialised). | `internal/api`, audit's informer caches | `Lookup` (registered as expr-lang env extension) |
 | `internal/expr/exprlang` | `expr-lang/expr` implementation of `ExpressionEngine`. Default engine. | `internal/api`, `github.com/expr-lang/expr` | `New() ExpressionEngine` (registered at init) |
 | `internal/engine` | Rule dispatch: indexes rules by GVK, evaluates `Context`, produces `[]Violation`. | `internal/api` | `New(engines, rules) RuleEngine` |
-| `internal/context/pod` | Pod-shaped `ContextBuilder` — façade preserving podwatcher-poc rule compatibility. | `internal/api`, `k8s.io/api/core/v1` | `New() ContextBuilder` |
-| `internal/sink/alertmanager` | Re-implementation of podwatcher-poc's AM client in Go behind `OutputSink`. | `internal/api`, `net/http` | `New(cfg) OutputSink` |
+| `internal/context/pod` | Pod-shaped `ContextBuilder` — narrow façade exposing the fields rule authors hit most often. | `internal/api`, `k8s.io/api/core/v1` | `New() ContextBuilder` |
+| `internal/sink/alertmanager` | AlertManager v2 client behind `OutputSink`. | `internal/api`, `net/http` | `New(cfg) OutputSink` |
 | `internal/sink/policyreport` | `wgpolicyk8s.io/v1alpha2` emitter via dynamic client. | `internal/api`, `client-go/dynamic` | `New(client) OutputSink` |
 | `internal/sink/prometheus` | Counters/gauges/histograms; serves `/metrics`. | `internal/api`, `prometheus/client_golang` | `New() OutputSink` |
 | `internal/sink/stdout` | JSON log sink via `slog`. | `internal/api`, `log/slog` | `New() OutputSink` |
@@ -401,14 +400,14 @@ actions:                            # NEW — explicit list; merged with `alert`
   - { type: evict, on: [audit], rateLimit: 5/min }
 ```
 
-Migration of existing podwatcher-poc rules: a `portal migrate-rules` subcommand applies the SpEL→expr-lang fixups (`{...}.contains(x)` → `x in [...]`, `.contains('y')` → `'y' in ...`) and rewrites `filter.namespace` into `match.namespaces`. Idempotent.
+A `portal migrate-rules` subcommand mechanically rewrites SpEL-style rules into expr-lang form — `{...}.contains(x)` → `x in [...]`, `.contains('y')` → `'y' in ...`, `filter.namespace` → `match.namespaces`. Idempotent. Intended for the small POC rule corpus and as a worked example for users coming from other SpEL-style tooling.
 
 ## Context model
 
 `Context` carries three layers:
 
 1. **`object` — always populated, for every GVK including Pod.** Raw resource as `*unstructured.Unstructured` exposed to expr-lang as nested maps. Anything in the K8s schema is reachable: `object.spec.replicas`, `object.spec.volumes[0].hostPath`, `object.spec.tolerations`, `object.spec.containers[0].resources.limits.memory`, `object.metadata.ownerReferences`, custom CRD fields, anything. This is the universal escape hatch — no field is ever inaccessible.
-2. **Pod-shaped sugar — populated only for Pods and resources with a `PodTemplateSpec`.** A *deliberately narrow* convenience façade covering exactly the fields podwatcher-poc exposes today: `container.{name,containerType,image.{registry,name,tag,sha256},command,args,ports,securityContext.{privileged,allowPrivilegeEscalation,readOnlyRootFilesystem,runAsUser,runAsGroup,runAsNonRoot,procMount,seccompProfileType,capabilities.{add,drop}}}`, `spec.{hostPID,hostNetwork,hostIPC,serviceAccountName,automountServiceAccountToken}`, `securityContext.{runAsUser,runAsGroup,runAsNonRoot,fsGroup,supplementalGroups,seccompProfileType}`, `metadata.{name,namespace,labels,annotations}`.
+2. **Pod-shaped sugar — populated only for Pods and resources with a `PodTemplateSpec`.** A *deliberately narrow* convenience façade covering the fields rule authors hit most often: `container.{name,containerType,image.{registry,name,tag,sha256},command,args,ports,securityContext.{privileged,allowPrivilegeEscalation,readOnlyRootFilesystem,runAsUser,runAsGroup,runAsNonRoot,procMount,seccompProfileType,capabilities.{add,drop}}}`, `spec.{hostPID,hostNetwork,hostIPC,serviceAccountName,automountServiceAccountToken}`, `securityContext.{runAsUser,runAsGroup,runAsNonRoot,fsGroup,supplementalGroups,seccompProfileType}`, `metadata.{name,namespace,labels,annotations}`.
 
    This is **not** a typed mirror of `v1.Pod`. Volumes, env, probes, lifecycle, nodeSelector, tolerations, affinity, topology constraints, priorityClassName, runtimeClassName, dns*, restartPolicy, schedulerName, imagePullSecrets, hostAliases, and most of `v1.Pod` are **not** in the sugar. Rules that want those fields use `object.spec.<path>` directly. Sugar grows additively when real rules demand it.
 
@@ -423,7 +422,7 @@ Implementation detail: expr-lang takes a `map[string]any` env. The pod ContextBu
 |---|---|---|
 | Admission response | Per-request | `AdmissionReview.response.allowed=false` + `status.message` (deny); `warnings[]` (warn); `allowed=true` always (dryrun) |
 | PolicyReport CRD | Per rule, per resource | One `PolicyReport` per namespace, one `ClusterPolicyReport` cluster-scoped; results merged across rules |
-| AlertManager | Per violation | Match podwatcher-poc's JSON schema exactly so existing AM routes keep working |
+| AlertManager | Per violation | AlertManager v2 alerts JSON payload; Prometheus routing reaches admission verdicts and audit findings without an adapter |
 | Prometheus | Continuous | `portal_admission_requests_total{decision}`, `portal_admission_latency_seconds`, `portal_audit_violations`, `portal_actions_total{action,result}`, `portal_audit_watch_reconnects_total`, `portal_np_findings` |
 
 ## v1 implementation plan
@@ -435,9 +434,9 @@ Implementation detail: expr-lang takes a `map[string]any` env. The pod ContextBu
 4. `internal/rule/v1alpha1` — status reconciler: each `Reconcile()` writes `.status.{evalCount,violationCount,lastApplied,parseError,activeOn}` back to the CR. Update interval bounded by a token bucket so noisy rules don't hammer the API server.
 5. `internal/expr/exprlang` adapter: compile expr-lang programs, register helper functions (`startsWith`, `matches`) where expr-lang's stdlib doesn't already cover them.
 6. `internal/context/pod` builder + `internal/engine` GVK-indexed evaluator.
-7. `internal/sink/alertmanager` — port podwatcher-poc's AM client (OkHttp → `net/http`, same retry/backoff semantics, same JSON shape).
+7. `internal/sink/alertmanager` — AlertManager v2 client (`net/http`, exponential backoff retry, structured payload).
 8. `internal/sink/prometheus` + `/metrics` + `/healthz`.
-9. `cmd/portal migrate-rules` — converts podwatcher-poc rule files into `PortalClusterRule` CR manifests (default) or to the new folder format with `--format=folder`. Idempotent.
+9. `cmd/portal migrate-rules` — converts SpEL-style rule files into `PortalClusterRule` CR manifests (default) or to the new folder format with `--format=folder`. Idempotent.
 
 ### Phase 2 — Admission webhook (layer 4)
 10. `internal/admission` using `controller-runtime/pkg/webhook` — TLS, `AdmissionReview` v1, GVK dispatch.
@@ -449,7 +448,7 @@ Implementation detail: expr-lang takes a `map[string]any` env. The pod ContextBu
     - `namespaceSelector` excludes `kube-system`, `kube-public`, `kube-node-lease`, and Portal's own namespace via `matchExpressions: [{key: kubernetes.io/metadata.name, operator: NotIn, values: [...]}]`. Non-negotiable — protects against self-lockout.
     - Break-glass: requests with annotation `portal.io/bypass=true` on the *namespace* (not the inbound object) short-circuit the webhook to `allowed=true`. Each bypass increments `portal_admission_bypass_total{namespace}` and emits a JSON audit log line. The annotation requires `patch` on namespaces, which is normally a privileged RBAC — by design.
     - Health: `/readyz` returns `notReady` on any sustained internal error (rule index unloaded, panic in last N requests). Failed readiness pulls the pod from the Service endpoints; if all pods are unready, the webhook is effectively absent and the `failurePolicy` decides.
-14. Helm chart (full chart detail in Phase 7): `global.failClosed: true` is the default; setting it to `false` rewrites the WebhookConfiguration to `failurePolicy: Ignore` for teams who want podwatcher-poc's "if it dies, cluster is fine" property. The system-namespace exclusion is **always** applied regardless of this flag.
+14. Helm chart (full chart detail in Phase 7): `global.failClosed: true` is the default; setting it to `false` rewrites the WebhookConfiguration to `failurePolicy: Ignore` for teams that prefer "if Portal dies, the cluster keeps accepting workloads" over hard enforcement. The system-namespace exclusion is **always** applied regardless of this flag.
 
 ### Phase 3 — Continuous audit (layer 5, opt-in via `--audit`)
 
@@ -493,7 +492,7 @@ Builds on Phase 3 informers; lands before actions/NP so they can use cluster hel
     - `OnAdd`/`OnUpdate`/`OnDelete` on `Pod` → re-evaluate default-deny coverage for that namespace + any NP selectors that match the pod's old/new labels.
     - `OnAdd`/`OnUpdate`/`OnDelete` on `NetworkPolicy` → re-evaluate all four checks for the affected namespace; clear stale findings tied to deleted policies.
     - `OnAdd`/`OnDelete` on `Namespace` → re-evaluate default-deny.
-23. Findings appear in PolicyReport sub-second after the triggering event; AlertManager alerts auto-resolve when fixes are applied (uses the existing `endsAt` mechanism from podwatcher-poc).
+23. Findings appear in PolicyReport sub-second after the triggering event; AlertManager alerts auto-resolve when fixes are applied (uses the standard `endsAt` mechanism from the AlertManager v2 API).
 24. Periodic resync (10 min) is the safety net only; the main path is informer events.
 
 ### Phase 7 — Helm chart + deploy
@@ -516,7 +515,7 @@ Builds on Phase 3 informers; lands before actions/NP so they can use cluster hel
     - System namespaces excluded from its own webhook.
     - Chart README documents the recovery path if a misconfigured rule ever bricks admission: scale Portal's Deployment to 0 via `kubectl --validate=strict=false`, or delete the `ValidatingWebhookConfiguration` directly.
 26. **Optional split-mode** (`global.mode: split`): one Deployment per layer (admission / audit / network). Each gets independent replica counts and resource limits. Same RBAC, divided by binary; same Helm chart, different value.
-27. **Bootstrap rule set**: chart bundles a small `portalclusterrules` set (loaded via post-install hook) covering the migrated podwatcher-poc examples. Operators can disable via `bootstrapRules: false`.
+27. **Bootstrap rule set** *(deferred past v1)*: a small `portalclusterrules` bundle covering the canonical examples (`examples/rules/`), shipped through a post-install hook. Off in v1 — operators copy the rules they want from `examples/rules/` and `kubectl apply` them manually.
 
 ## v2 implementation plan (sketch — not in v1)
 
@@ -525,16 +524,18 @@ Builds on Phase 3 informers; lands before actions/NP so they can use cluster hel
 - Runtime events feed the v1 action engine — no new action machinery, just a new `EventSource`.
 - Optional Tetragon/Falco gRPC consumer as a second runtime source.
 
-## What carries over from podwatcher-poc
+## What the POC contributed
 
-| Source (Java) | Target (Go) | Treatment |
+The `podwatcher-poc` was a Java/SpEL prototype that established the rule shape, the AlertManager payload contract, and the per-container evaluation ergonomics. Portal carries those forward into a Go implementation and drops everything else:
+
+| POC component (Java) | Portal equivalent (Go) | Treatment |
 |---|---|---|
-| `core/.../rule/Rule.java` | `internal/rule/rule.go` | Schema unchanged (additive fields). Rewritten in Go |
+| `core/.../rule/Rule.java` | `internal/api/rule.go` + `internal/rule/v1alpha1` | Schema shape preserved (additive fields); reimplemented in Go behind a CRD |
 | `core/.../context/*.java` | `internal/api/context.go` + `internal/context/pod/builder.go` | Same shape; reimplemented in Go |
-| `core/.../alertmanager/AlertManagerClient.java` | `internal/sink/alertmanager/client.go` | Port: same JSON, same retry/backoff, same auth |
-| `core/.../metrics/*.java` | `internal/sink/prometheus/*.go` | Map simpleclient counters to `client_golang` |
+| `core/.../alertmanager/AlertManagerClient.java` | `internal/sink/alertmanager/client.go` | Reimplemented against the AlertManager v2 alerts API |
+| `core/.../metrics/*.java` | `internal/sink/prometheus/*.go` | Counters reissued through `client_golang` |
 | `core/.../health/HealthServer.java` | `internal/sink/prometheus` shares `/healthz` + `/metrics` server | Combined into one HTTP listener |
-| `examples/rules/*.yaml` | `examples/rules/*.yaml` (migrated) | `portal migrate-rules` rewrites `.contains()` → `in` and `filter.namespace` → `match.namespaces` |
+| `examples/rules/*.yaml` | `examples/rules/*.yaml` | `portal migrate-rules` rewrites `.contains()` → `in` and `filter.namespace` → `match.namespaces` |
 | `scanner-docker/` | dropped | K8s only |
 | `webhook/` (stub) | replaced by `internal/admission` | Clean implementation |
 | `scanner-k8s/` polling logic | replaced by `internal/audit` informers | Watch-based, no polling |
@@ -546,12 +547,11 @@ Builds on Phase 3 informers; lands before actions/NP so they can use cluster hel
 - **Audit immediacy:** with the rule pre-installed, `kubectl apply` a violating pod and assert the PolicyReport entry + action dispatch happen within **1 second** of pod creation. Kill the watch connection mid-test — verify recovery via `portal_audit_watch_reconnects_total`, not via the 10-min resync.
 - **Network analyser reactivity:** namespace with no NP and a pod produces `np.default-deny-missing`. Add a default-deny NP; assert the finding clears within 1 s (informer event, no timer). Delete the NP; assert the finding re-fires within 1 s. Add an NP with `podSelector: {role: api}` and no matching pods; `np.unreachable-selector` fires. Add a pod with that label; finding clears.
 - **Actions:** rule with `actions: [{type: label, ...}, {type: evict, ...}]` against an audit finding — label appears within one reconcile; eviction recorded in `portal_actions_total{action="evict",result="ok"}`; second identical finding within rate-limit window does *not* fire again; action audit log contains both attempts with reason.
-- **Outputs:** AlertManager mocked in test receives JSON matching podwatcher-poc's schema byte-for-byte (regression vector); `PolicyReport` CR is created and updated, not duplicated; admission denial messages render in `kubectl` output.
+- **Outputs:** AlertManager mocked in test receives a JSON body conforming to the AlertManager v2 schema (regression vector against `testdata/expected_alert.json`); `PolicyReport` CR is created and updated, not duplicated; admission denial messages render in `kubectl` output.
 - **HA + fail-closed:** scale Deployment to 3 replicas with `global.failClosed: true`; exactly one Lease holder; rolling restart of the leader transfers within ~15 s without duplicate alerts; during a rollout, admission requests to a workload namespace continue to succeed (PDB enforces ≥1 ready replica). Kill all Portal pods → assert API calls to a *workload* namespace are rejected with the webhook's failurePolicy message, while calls to `kube-system` and the Portal install namespace continue to succeed (namespaceSelector exclusion).
 - **Cross-resource:** rule using `cluster.poddisruptionbudgets.list(object.metadata.namespace, selector={...})` against a Deployment without a PDB → violation. Add a matching PDB → dep-index re-evaluates the Deployment within 1 s → violation clears. Delete the PDB → violation re-fires within 1 s. With 100k cached objects, cycle protection caps re-evals at the configured budget; counter `portal_lookup_cycle_suppressed_total` is observable.
 - **CRD rule loading:** `kubectl apply` of a malformed `PortalClusterRule` is rejected by the API server with a schema error; a syntactically-valid but expr-lang-uncompilable rule is accepted, and its `.status.parseError` is populated within 1 s; a fixed rule's status clears on next apply; rule deletion removes it from the engine's index without restart.
-- **Bootstrap rule set:** Helm install with `bootstrapRules: true` creates the post-install hook → `kubectl get portalclusterrule` lists the migrated podwatcher-poc examples; disabling the hook removes them on next upgrade.
-- **End-to-end golden test under `deploy/test/`:** spin up kind, install Helm chart, apply the migrated example rule bundle, apply a fixture of compliant + violating manifests, assert deny count, warn count, PolicyReport contents, AlertManager calls, Prometheus scrape.
+- **End-to-end golden test under `deploy/test/`:** spin up kind, install Helm chart, apply the example rule bundle from `examples/rules/`, apply a fixture of compliant + violating manifests, assert deny count, warn count, PolicyReport contents, AlertManager calls, Prometheus scrape.
 
 ## Critical files (to be created)
 
@@ -562,7 +562,7 @@ Builds on Phase 3 informers; lands before actions/NP so they can use cluster hel
 - `internal/expr/exprlang/engine.go` — expr-lang adapter.
 - `internal/engine/dispatcher.go` — GVK-indexed rule evaluator.
 - `internal/context/pod/builder.go` — pod-shaped ContextBuilder.
-- `internal/sink/alertmanager/client.go` — port of podwatcher-poc's AM client.
+- `internal/sink/alertmanager/client.go` — AlertManager v2 client.
 - `internal/sink/policyreport/client.go` — PolicyReport CR emitter.
 - `internal/admission/server.go` — TLS webhook.
 - `internal/admission/cert.go` — self-signed bootstrap + cert-manager support.
@@ -573,7 +573,7 @@ Builds on Phase 3 informers; lands before actions/NP so they can use cluster hel
 - `internal/actions/{label,annotate,evict,patchnp,revoketoken}/action.go` — action impls.
 - `deploy/helm/portal/` — Helm chart.
 - `deploy/crds/wgpolicyk8s.io_policyreports.yaml` — vendored CRD.
-- `examples/rules/*.yaml` — migrated copies of podwatcher-poc rules.
+- `examples/rules/*.yaml` — canonical example rules; doubles as the input fixture for `portal migrate-rules`.
 - `cmd/portal/migrate.go` — `portal migrate-rules` subcommand.
 - `internal/rule/v1alpha1/types.go` — generated `PortalClusterRule` / `PortalRule` Go types.
 - `internal/rule/v1alpha1/reconciler.go` — `.status` writer for rule CRs.
