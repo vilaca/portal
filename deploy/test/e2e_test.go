@@ -364,6 +364,7 @@ func TestRuleMigrationCompileLoop(t *testing.T) {
 	if err != nil || len(entries) == 0 {
 		t.Fatalf("migrate-rules produced no output (err=%v)", err)
 	}
+	appliedNames := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		path := filepath.Join(outDir, entry.Name())
 		applyCmd := exec.Command("kubectl", "apply", "-f", path)
@@ -371,7 +372,21 @@ func TestRuleMigrationCompileLoop(t *testing.T) {
 		if b, err := applyCmd.CombinedOutput(); err != nil {
 			t.Fatalf("kubectl apply %q: %v\n%s", path, err, b)
 		}
+		// Each migrated file is named <rule-name>.yaml; the metadata.name
+		// inside matches. Track for cleanup so later tests don't inherit
+		// a deny-mode admission rule (e.g. privileged-container).
+		name := strings.TrimSuffix(entry.Name(), ".yaml")
+		appliedNames = append(appliedNames, name)
 	}
+	t.Cleanup(func() {
+		for _, name := range appliedNames {
+			bg := context.Background()
+			_ = e.dyn.Resource(gvrPortalClusterRule).Delete(bg, name, metav1.DeleteOptions{})
+		}
+		for _, name := range appliedNames {
+			waitForRuleAbsent(t, name)
+		}
+	})
 	// Assert every applied rule shows .status.parseError == "" within 30 s.
 	eventuallyMsg(t, 30*time.Second, "PortalClusterRules failed to parse", func(ctx context.Context) (bool, error) {
 		list, err := e.dyn.Resource(gvrPortalClusterRule).List(ctx, metav1.ListOptions{})

@@ -9,3 +9,4 @@ coverage.txt
 node_modules/
 site/
 __pycache__/
+deploy/test/kind-logs/

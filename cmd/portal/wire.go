@@ -89,6 +89,12 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 		if err != nil {
 			return fmt.Errorf("kubeconfig: %w", err)
 		}
+		// Default in-cluster config is QPS=5 / Burst=10, which starves the
+		// audit informer factory, lookup-cache list calls fired from
+		// expr-lang rules, and the action dispatcher whenever a rule fans
+		// out. Bump both well above the steady-state ceiling.
+		restCfg.QPS = 100
+		restCfg.Burst = 200
 		dynClient, err = dynamic.NewForConfig(restCfg)
 		if err != nil {
 			return fmt.Errorf("dynamic client: %w", err)

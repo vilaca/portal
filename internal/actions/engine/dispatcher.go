@@ -171,10 +171,13 @@ func (d *dispatcher) runSpec(v api.Violation, spec api.ActionSpec) {
 		return
 	}
 
-	// 4. Rate limit.
+	// 4. Rate limit. Key is per (rule, action) so the rateLimit value is
+	// the cluster-wide cap for that rule+action — idempotency above already
+	// handles same-target dedup, which would otherwise make a per-pod key
+	// here redundant.
 	window, budget, ok := parseRateLimit(spec.RateLimit)
 	if ok && d.limiter != nil {
-		rateKey := v.Rule + "|" + v.Namespace + "/" + v.Name
+		rateKey := v.Rule + "|" + spec.Type
 		if !d.limiter.Allow(rateKey, window, budget) {
 			prom.ActionsTotal.WithLabelValues(spec.Type, resultRateLimited).Inc()
 			return
