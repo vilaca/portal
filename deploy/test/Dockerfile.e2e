@@ -1,0 +1,17 @@
+# Multi-stage build for the Portal e2e image.
+# Stage 1 produces a static linux/amd64 binary; stage 2 wraps it in distroless.
+# Used exclusively by deploy/test/kind.sh — production images come from the
+# release pipeline.
+
+FROM golang:1.22 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+RUN go build -trimpath -ldflags="-s -w" -o /out/portal ./cmd/portal
+
+FROM gcr.io/distroless/static:nonroot
+COPY --from=builder /out/portal /portal
+USER nonroot:nonroot
+ENTRYPOINT ["/portal"]

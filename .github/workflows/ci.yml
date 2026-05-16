@@ -95,3 +95,65 @@ jobs:
             git --no-pager diff
             exit 1
           fi
+
+  # ---------------------------------------------------------------------------
+  # End-to-end suite against a disposable kind cluster.
+  # Runs on PRs targeting main and on pushes to main. Doc-only PRs skip via
+  # the paths-filter step; the job is fail-on-error (no continue-on-error).
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: e2e (kind)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Detect doc-only change
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            code:
+              - '!docs/**'
+              - '!**/*.md'
+              - '!mkdocs.yml'
+
+      - name: Set up Go
+        if: steps.filter.outputs.code == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Install Helm
+        if: steps.filter.outputs.code == 'true'
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Install kind
+        if: steps.filter.outputs.code == 'true'
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+          version: v0.23.0
+
+      - name: Verify shell scripts
+        if: steps.filter.outputs.code == 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck deploy/test/*.sh
+
+      - name: Run e2e
+        if: steps.filter.outputs.code == 'true'
+        run: ./deploy/test/kind.sh
+
+      - name: Upload kind logs on failure
+        if: failure() && steps.filter.outputs.code == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind-logs
+          path: deploy/test/kind-logs
+          if-no-files-found: ignore
