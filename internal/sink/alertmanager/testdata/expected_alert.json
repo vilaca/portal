@@ -1,0 +1,23 @@
+[
+  {
+    "labels": {
+      "alertname": "privileged-container",
+      "kind": "Pod",
+      "mode": "audit",
+      "name": "api-server",
+      "namespace": "production",
+      "rule": "privileged-container",
+      "severity": "critical"
+    },
+    "annotations": {
+      "container": "main",
+      "description": "container is privileged",
+      "operation": "UPDATE",
+      "runbook_url": "https://runbooks.example/privileged",
+      "source": "evt-42",
+      "summary": "privileged-container"
+    },
+    "startsAt": "2025-01-02T03:04:05.000000006Z",
+    "generatorURL": ""
+  }
+]
