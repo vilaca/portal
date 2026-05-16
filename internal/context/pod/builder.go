@@ -2,7 +2,7 @@
 // Pod (or workload kind whose .spec.template.spec is a PodSpec — Deployment,
 // StatefulSet, DaemonSet, Job, CronJob, ReplicaSet, ReplicationController)
 // into one Context per container, exposing the deliberately-narrow pod sugar
-// described in /docs/PLAN.md (Context model).
+// described in /docs/POC-TO-PRODUCTION.md (Context model).
 //
 // Multi-container semantics:
 //

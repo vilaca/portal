@@ -7,7 +7,7 @@ import (
 )
 
 // LRU is the default api.IdempotencyStore: a bounded LRU with per-entry TTL.
-// Capacity defaults to 100_000 (the figure cited in PLAN.md Phase 5);
+// Capacity defaults to 100_000 (the figure cited in POC-TO-PRODUCTION.md Phase 5);
 // evictions happen when the map exceeds capacity, in least-recently-used
 // order via the embedded doubly-linked list.
 //

@@ -24,4 +24,4 @@ See [getting-started/quickstart-kind.md](getting-started/quickstart-kind.md).
 
 ## Source of truth
 
-The canonical v1 design lives in [PLAN.md](PLAN.md). When this site and PLAN.md disagree, PLAN.md wins until the docs are corrected.
+The canonical v1 design — the record of how `podwatcher-poc` was productised into Portal — lives in [POC-TO-PRODUCTION.md](POC-TO-PRODUCTION.md). When this site and that document disagree, the productisation note wins until the docs are corrected.

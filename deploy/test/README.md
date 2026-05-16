@@ -3,7 +3,7 @@
 This directory contains the Portal end-to-end suite. It spins up a disposable
 [kind](https://kind.sigs.k8s.io/) cluster, installs the Helm chart from
 `deploy/helm/portal/`, then runs a Go test binary tagged `e2e` that exercises
-the eleven Verification scenarios listed in `docs/PLAN.md`.
+the eleven Verification scenarios listed in `docs/POC-TO-PRODUCTION.md`.
 
 The harness is invoked from CI by `.github/workflows/ci.yml` and is intended to
 be re-runnable on a developer laptop with the same single command.
@@ -81,7 +81,7 @@ kubectl -n portal-system exec -it deploy/portal -- /portal --help
 
 ## Subtests ↔ Verification scenarios
 
-Each subtest in `e2e_test.go` maps 1:1 to a scenario in `docs/PLAN.md`
+Each subtest in `e2e_test.go` maps 1:1 to a scenario in `docs/POC-TO-PRODUCTION.md`
 §Verification. The cross-reference:
 
 | Subtest                          | Verification scenario |

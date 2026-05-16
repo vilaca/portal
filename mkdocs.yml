@@ -44,7 +44,7 @@ markdown_extensions:
 
 nav:
   - Home: README.md
-  - Plan: PLAN.md
+  - POC to production: POC-TO-PRODUCTION.md
   - Getting started:
       - Quickstart on kind: getting-started/quickstart-kind.md
       - Install with Helm: getting-started/install-helm.md

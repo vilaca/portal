@@ -13,7 +13,7 @@ The end state: every `podwatcher-poc` rule is running inside Portal as a `Portal
 | `filter.namespace` field | `match.namespaces.include` | rewritten by the migrator |
 | Prometheus counters | renamed (`portal_*` prefix) | document new names in your dashboards |
 
-Per the design (see `PLAN.md` "Language pivot"): of the six example rules in `podwatcher-poc`, **four translate byte-identical** and **two need the `.contains()` → `in` swap**, which `portal migrate-rules` performs automatically.
+Per the design (see `POC-TO-PRODUCTION.md` "Language pivot"): of the six example rules in `podwatcher-poc`, **four translate byte-identical** and **two need the `.contains()` → `in` swap**, which `portal migrate-rules` performs automatically.
 
 ## Step 1 — Run `portal migrate-rules`
 

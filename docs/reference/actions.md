@@ -120,5 +120,5 @@ Implementation: [`internal/actions/revoketoken/action.go`](../../internal/action
 ```yaml
 actions:
   - type: revoke-sa-token
-    on: [runtime]      # v2; see PLAN.md
+    on: [runtime]      # v2; see POC-TO-PRODUCTION.md
 ```

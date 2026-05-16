@@ -5,7 +5,7 @@
 // from deploy/test/kind.sh, which provisions a kind cluster, installs the
 // Helm chart, and then calls `go test -tags=e2e ./deploy/test/...`.
 //
-// Every subtest maps 1:1 to a scenario in docs/PLAN.md §Verification. The
+// Every subtest maps 1:1 to a scenario in docs/POC-TO-PRODUCTION.md §Verification. The
 // mapping is documented in deploy/test/README.md.
 package e2e
 

@@ -9,7 +9,7 @@
 // closes the queue and waits for workers; this lets cmd/portal/run.go
 // flush in-flight actions during graceful shutdown.
 //
-// Counter labels in portal_actions_total{action,result} follow the PLAN.md
+// Counter labels in portal_actions_total{action,result} follow the POC-TO-PRODUCTION.md
 // taxonomy exactly:
 //   - ok          — action returned nil
 //   - error       — action returned non-nil
@@ -95,7 +95,7 @@ type dispatcher struct {
 
 // Dispatch enqueues v without blocking. A full queue is recorded as
 // result="dropped" against the synthetic action label "*", which matches the
-// label convention used by PLAN.md's audit-log section.
+// label convention used by POC-TO-PRODUCTION.md's audit-log section.
 func (d *dispatcher) Dispatch(_ context.Context, v api.Violation) {
 	d.closeMu.Lock()
 	if d.closed {
@@ -193,7 +193,7 @@ func (d *dispatcher) runSpec(v api.Violation, spec api.ActionSpec) {
 	d.audit(v, spec, result, err)
 }
 
-// audit emits the JSON line described in PLAN.md item 19.
+// audit emits the JSON line described in POC-TO-PRODUCTION.md item 19.
 func (d *dispatcher) audit(v api.Violation, spec api.ActionSpec, result string, err error) {
 	attrs := []any{
 		"action", spec.Type,

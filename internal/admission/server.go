@@ -3,7 +3,7 @@
 // via registered ContextBuilders, evaluates rules through a RuleEngine, dispatches
 // resulting Violations to sinks and the ActionDispatcher, and renders an
 // AdmissionReview response with allowed/warnings/status.message populated per the
-// aggregation rules in /docs/PLAN.md (Phase 2).
+// aggregation rules in /docs/POC-TO-PRODUCTION.md (Phase 2).
 //
 // Fail-closed posture: the actual ValidatingWebhookConfiguration.failurePolicy
 // lives in the Helm chart; this package does not gate behaviour on FailClosed
