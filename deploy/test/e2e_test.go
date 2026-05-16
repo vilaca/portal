@@ -452,9 +452,9 @@ kind: Pod
 metadata: {name: priv, namespace: %s}
 spec:
   containers:
-  - name: app
-    image: nginx
-    securityContext: {privileged: true}
+    - name: app
+      image: nginx
+      securityContext: {privileged: true}
 `, ns)
 	out, err := kubectlApply(t, pod)
 	if err == nil {

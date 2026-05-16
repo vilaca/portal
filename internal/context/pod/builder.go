@@ -23,6 +23,7 @@ package pod
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -94,9 +95,30 @@ func (b *Builder) BuildAll(obj *unstructured.Unstructured) ([]api.Context, error
 	gvk := obj.GroupVersionKind()
 	podSpec := locatePodSpec(obj)
 
-	std, _, _ := unstructured.NestedSlice(podSpec, "containers")
+	std, _, stdErr := unstructured.NestedSlice(podSpec, "containers")
 	initC, _, _ := unstructured.NestedSlice(podSpec, "initContainers")
 	eph, _, _ := unstructured.NestedSlice(podSpec, "ephemeralContainers")
+
+	if len(std) == 0 && len(initC) == 0 && len(eph) == 0 {
+		// Diagnostic: log the path we tried and what we got, so an empty
+		// container set has a trail (CI-only failure currently flying blind).
+		var podKeys, specKeys []string
+		for k := range obj.Object {
+			podKeys = append(podKeys, k)
+		}
+		for k := range podSpec {
+			specKeys = append(specKeys, k)
+		}
+		slog.Info("pod builder: no containers found",
+			"gvk", gvk.String(),
+			"name", obj.GetName(),
+			"namespace", obj.GetNamespace(),
+			"podKeys", podKeys,
+			"specKeys", specKeys,
+			"podSpecNil", podSpec == nil,
+			"containersErr", stdErr,
+		)
+	}
 
 	specEnv := buildSpecEnv(podSpec)
 	scEnv := buildPodSecurityContextEnv(podSpec)
