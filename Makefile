@@ -3,9 +3,9 @@ GO := go
 BIN := bin/portal
 PKG := ./...
 
-CONTROLLER_GEN ?= $(shell go env GOPATH)/bin/controller-gen
-HELM_DOCS      ?= $(shell go env GOPATH)/bin/helm-docs
-GOMARKDOC      ?= $(shell go env GOPATH)/bin/gomarkdoc
+CONTROLLER_GEN ?= $(shell command -v controller-gen 2>/dev/null || echo $$(go env GOPATH)/bin/controller-gen)
+HELM_DOCS      ?= $(shell command -v helm-docs      2>/dev/null || echo $$(go env GOPATH)/bin/helm-docs)
+GOMARKDOC      ?= $(shell command -v gomarkdoc     2>/dev/null || echo $$(go env GOPATH)/bin/gomarkdoc)
 
 .PHONY: all build vet test lint tidy generate generate-crds generate-docs clean docs
 

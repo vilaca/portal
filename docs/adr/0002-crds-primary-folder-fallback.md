@@ -8,7 +8,7 @@
 
 ## Decision
 
-- **`PortalClusterRule` (cluster-scoped) and `PortalRule` (namespaced) CRDs are the canonical surface.** `apiVersion: portal.io/v1alpha1`, defined in `internal/rule/crd/types.go`, deployed via the chart's `crds/` directory.
+- **`PortalClusterRule` (cluster-scoped) and `PortalRule` (namespaced) CRDs are the canonical surface.** `apiVersion: portal.io/v1alpha1`, defined in `internal/rule/v1alpha1/types.go`, deployed via the chart's `crds/` directory.
 - **The folder loader is retained** behind the `--rules-folder` flag. Both can run simultaneously; the in-memory rule index is a merged view.
 - **`portal migrate-rules` writes CRs by default** (`--format=cr`) and folder files on `--format=folder` (`internal/rule/migrate/migrate.go`).
 
@@ -17,7 +17,7 @@
 - **`kubectl apply` is the contract.** Every K8s tool, every operator, every CI pipeline already knows it. No new file-distribution mechanism to ship.
 - **K8s RBAC** scopes who can write rules: cluster admins for `PortalClusterRule`, namespace owners for `PortalRule`.
 - **GitOps-native.** Argo CD / Flux already reconcile CRs; rules become regular declarative manifests under version control.
-- **`.status` reporting.** Each CR has a `.status` subresource that the reconciler (`internal/rule/crd/reconciler.go`) writes with `evalCount`, `violationCount`, `lastApplied`, `parseError`, `activeOn`. Users see whether a rule is firing without grepping logs.
+- **`.status` reporting.** Each CR has a `.status` subresource that the reconciler (`internal/rule/v1alpha1/reconciler.go`) writes with `evalCount`, `violationCount`, `lastApplied`, `parseError`, `activeOn`. Users see whether a rule is firing without grepping logs.
 - **Validation at the API server.** The OpenAPI structural schema rejects malformed manifests before Portal ever sees them. Expression-level errors (expr-lang syntax) surface in `.status.parseError` post-apply.
 - **Discoverability.** `kubectl get portalclusterrule` lists every active rule. `kubectl describe` gives operators everything they need without learning Portal-specific tooling.
 

@@ -266,7 +266,7 @@ Go module: `github.com/vilaca/portal` (or similar). Package layout:
 |---|---|---|---|
 | `internal/api` | Pure interfaces + DTOs only. Zero K8s/expr-lang dependency. | — | `Rule`, `Violation`, `Decision`, `Context`, `EventMeta`, `ExpressionEngine`, `RuleEngine`, `EventSource`, `OutputSink`, `Action`, `ActionDispatcher`, `RateLimiter`, `IdempotencyStore`, `ContextBuilder` |
 | `internal/rule/loader` | YAML loader + validator for the rule schema. Two sources behind one interface: folder loader (filesystem walk + watch) and CR loader (informer on `PortalClusterRule` + `PortalRule`). Same parsed `Rule` regardless of source. | `internal/api`, `sigs.k8s.io/yaml`, `client-go` informers | `RuleLoader` interface; `NewFolder(path)`, `NewCR(client)` |
-| `internal/rule/crd` | Generated Go types for `PortalClusterRule` / `PortalRule` CRDs via `controller-gen`. Status reconciler writes `.status` back to each CR (eval count, last-applied, parseError). | `internal/api`, `client-go` | `Reconciler` |
+| `internal/rule/v1alpha1` | Generated Go types for `PortalClusterRule` / `PortalRule` CRDs via `controller-gen`. Status reconciler writes `.status` back to each CR (eval count, last-applied, parseError). | `internal/api`, `client-go` | `Reconciler` |
 | `internal/lookup` | Cluster lookup helpers exposed to expr-lang as `cluster.<gvk>.byName(ns,name)` / `cluster.<gvk>.list(ns,selector)`. Reverse-dependency index — records what each (rule, object) read; on referenced-resource change, enqueues re-eval of dependents. Cycle protection via bounded re-eval budget per object per window. Admission virtual-cluster view (inbound object materialised). | `internal/api`, audit's informer caches | `Lookup` (registered as expr-lang env extension) |
 | `internal/expr/exprlang` | `expr-lang/expr` implementation of `ExpressionEngine`. Default engine. | `internal/api`, `github.com/expr-lang/expr` | `New() ExpressionEngine` (registered at init) |
 | `internal/engine` | Rule dispatch: indexes rules by GVK, evaluates `Context`, produces `[]Violation`. | `internal/api` | `New(engines, rules) RuleEngine` |
@@ -430,9 +430,9 @@ Implementation detail: expr-lang takes a `map[string]any` env. The pod ContextBu
 
 ### Phase 1 — Repo skeleton & core
 1. `go mod init`, `cmd/portal/main.go` stub, `internal/api` interfaces + DTOs.
-2. CRD design + generated types: `PortalClusterRule` (cluster-scoped) + `PortalRule` (namespaced). Schema mirrors the rule YAML schema below. Generated via `controller-gen` under `internal/rule/crd/`. CRD YAMLs live in `deploy/crds/`. Validation: OpenAPI structural schema constrains field types; the `rule:` expression field is a string regex-sanity-checked at admission and fully validated by Portal which writes parse errors back to `.status.parseError`.
+2. CRD design + generated types: `PortalClusterRule` (cluster-scoped) + `PortalRule` (namespaced). Schema mirrors the rule YAML schema below. Generated via `controller-gen` under `internal/rule/v1alpha1/`. CRD YAMLs live in `deploy/crds/`. Validation: OpenAPI structural schema constrains field types; the `rule:` expression field is a string regex-sanity-checked at admission and fully validated by Portal which writes parse errors back to `.status.parseError`.
 3. `internal/rule/loader` — `RuleLoader` interface with two implementations: `NewFolder(path)` (filesystem walk + `fsnotify` for hot-reload) and `NewCR(client)` (informers on the two CRDs). Both feed into a single in-memory rule index. `--rules-folder` and CR mode are independently enable-able; both can run simultaneously (folder for bootstrap, CRs for everything else).
-4. `internal/rule/crd` — status reconciler: each `Reconcile()` writes `.status.{evalCount,violationCount,lastApplied,parseError,activeOn}` back to the CR. Update interval bounded by a token bucket so noisy rules don't hammer the API server.
+4. `internal/rule/v1alpha1` — status reconciler: each `Reconcile()` writes `.status.{evalCount,violationCount,lastApplied,parseError,activeOn}` back to the CR. Update interval bounded by a token bucket so noisy rules don't hammer the API server.
 5. `internal/expr/exprlang` adapter: compile expr-lang programs, register helper functions (`startsWith`, `matches`) where expr-lang's stdlib doesn't already cover them.
 6. `internal/context/pod` builder + `internal/engine` GVK-indexed evaluator.
 7. `internal/sink/alertmanager` — port podwatcher-poc's AM client (OkHttp → `net/http`, same retry/backoff semantics, same JSON shape).
@@ -575,8 +575,8 @@ Builds on Phase 3 informers; lands before actions/NP so they can use cluster hel
 - `deploy/crds/wgpolicyk8s.io_policyreports.yaml` — vendored CRD.
 - `examples/rules/*.yaml` — migrated copies of podwatcher-poc rules.
 - `cmd/portal/migrate.go` — `portal migrate-rules` subcommand.
-- `internal/rule/crd/types.go` — generated `PortalClusterRule` / `PortalRule` Go types.
-- `internal/rule/crd/reconciler.go` — `.status` writer for rule CRs.
+- `internal/rule/v1alpha1/types.go` — generated `PortalClusterRule` / `PortalRule` Go types.
+- `internal/rule/v1alpha1/reconciler.go` — `.status` writer for rule CRs.
 - `internal/rule/loader/folder.go` — filesystem-folder rule loader.
 - `internal/rule/loader/cr.go` — CR-informer rule loader.
 - `internal/lookup/cluster.go` — `cluster.<gvk>.*` helpers for expr-lang.

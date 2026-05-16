@@ -1,6 +1,6 @@
 # Rule schema
 
-The canonical Go shape is `api.Rule` in [`internal/api/rule.go`](../../internal/api/rule.go). The CRD spec ([`internal/rule/crd/types.go`](../../internal/rule/crd/types.go)) is a verbatim mirror except for the engine-internal `Source` field.
+The canonical Go shape is `api.Rule` in [`internal/api/rule.go`](../../internal/api/rule.go). The CRD spec ([`internal/rule/v1alpha1/types.go`](../../internal/rule/v1alpha1/types.go)) is a verbatim mirror except for the engine-internal `Source` field.
 
 ```yaml
 name: privileged-container
@@ -71,7 +71,7 @@ match:
 
 ## CRD .status
 
-When loaded from a `PortalClusterRule` / `PortalRule` CR, the reconciler writes a `.status` block per rule ([`internal/rule/crd/types.go`](../../internal/rule/crd/types.go) `RuleStatus`):
+When loaded from a `PortalClusterRule` / `PortalRule` CR, the reconciler writes a `.status` block per rule ([`internal/rule/v1alpha1/types.go`](../../internal/rule/v1alpha1/types.go) `RuleStatus`):
 
 | Field | Meaning |
 |-------|---------|

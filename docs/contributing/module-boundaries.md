@@ -74,6 +74,6 @@ This split is the canonical scaling story for high-throughput clusters: admissio
 - A new **`cluster.<gvk>.*` helper or expr-lang binding** → extend `internal/lookup/`. Document in `docs/reference/expression-language.md`.
 - A new **per-GVK context-shape** → `internal/context/<name>/`. Add to the registry. Most rules cope with the generic builder; resist adding sugar until real rules demand it (per `docs/adr/0006-pod-sugar-narrow-facade.md`).
 - A new **Helm value** → `deploy/helm/portal/values.yaml` (with a `# --` doc-comment for `helm-docs`), `deploy/helm/portal/templates/*` to consume it, and `docs/reference/helm-values.md` for the user-facing description.
-- A new **rule-schema field** → `internal/api/rule.go` for the DTO, `internal/rule/crd/types.go` for the CR shape (with kubebuilder markers), `internal/rule/loader/` for parsing, `docs/reference/rule-schema.md` for the docs entry.
+- A new **rule-schema field** → `internal/api/rule.go` for the DTO, `internal/rule/v1alpha1/types.go` for the CR shape (with kubebuilder markers), `internal/rule/loader/` for parsing, `docs/reference/rule-schema.md` for the docs entry.
 
 The cross-cutting rule (from `docs/POC-TO-PRODUCTION.md` §"Documentation as a first-class deliverable"): a PR that introduces or changes a user-visible behaviour must include the doc change in the same PR. CI fails if a public-API symbol, CRD field, rule-schema field, Helm value, metric, or built-in action is added without its doc entry.
