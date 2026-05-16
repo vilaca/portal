@@ -212,6 +212,18 @@ func (h *handler) process(ctx context.Context, req *admissionv1.AdmissionRequest
 		allViolations = append(allViolations, v...)
 	}
 
+	// Diagnostic: per-request summary so an admission decision can be
+	// traced from the pod logs. INFO-level so it shows up in default
+	// log settings. Only fires once per request (not per context).
+	slog.Info("admission request",
+		"gvk", gvk.String(),
+		"namespace", req.Namespace,
+		"name", req.Name,
+		"operation", string(req.Operation),
+		"contexts", len(contexts),
+		"violations", len(allViolations),
+	)
+
 	// (6) Aggregate decision.
 	decision := aggregate(allViolations)
 

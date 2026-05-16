@@ -13,6 +13,7 @@ package engine
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -133,12 +134,21 @@ func (d *dispatcher) CompileErrors() map[string]string {
 // observe it.
 func (d *dispatcher) Evaluate(ctx api.Context, meta api.EventMeta) []api.Violation {
 	rules := d.idx.ForGVK(ctx.GVK)
-	if len(rules) == 0 {
-		return nil
-	}
 	ns, name := metadataFromObject(ctx)
 	mode := modeFromSource(meta.Source)
 	container := containerNameFromEnv(ctx.Env)
+
+	if mode == api.ModeAdmission {
+		names := make([]string, 0, len(rules))
+		for _, r := range rules {
+			names = append(names, r.Name)
+		}
+		slog.Info("engine evaluate", "gvk", ctx.GVK.String(), "namespace", ns, "name", name, "ruleCount", len(rules), "rules", names)
+	}
+
+	if len(rules) == 0 {
+		return nil
+	}
 
 	evalCtx := ctx
 	if len(d.clusterEnv) > 0 {
@@ -152,20 +162,32 @@ func (d *dispatcher) Evaluate(ctx api.Context, meta api.EventMeta) []api.Violati
 
 	out := make([]api.Violation, 0, len(rules))
 	for _, r := range rules {
-		if !namespaceAllowed(r.Match.Namespaces, ns) {
+		nsOK := namespaceAllowed(r.Match.Namespaces, ns)
+		if !nsOK {
+			if mode == api.ModeAdmission {
+				slog.Info("engine skip rule (namespace)", "rule", r.Name, "ns", ns, "include", r.Match.Namespaces.Include, "exclude", r.Match.Namespaces.Exclude)
+			}
 			continue
 		}
 		prog, err := d.programFor(r)
 		if err != nil {
-			// Compile error already recorded in programFor; skip rule.
+			if mode == api.ModeAdmission {
+				slog.Info("engine skip rule (compile)", "rule", r.Name, "err", err)
+			}
 			continue
 		}
 		ok, err := prog.Eval(evalCtx)
 		if err != nil {
 			d.compileErrors.Store(r.Name, "eval: "+err.Error())
+			if mode == api.ModeAdmission {
+				slog.Info("engine skip rule (eval err)", "rule", r.Name, "err", err)
+			}
 			continue
 		}
 		if !ok {
+			if mode == api.ModeAdmission {
+				slog.Info("engine skip rule (eval false)", "rule", r.Name)
+			}
 			continue
 		}
 		out = append(out, buildViolation(r, ctx, meta, mode, ns, name, container))
