@@ -135,6 +135,15 @@ type Controller struct {
 	mu        sync.Mutex
 	stopCh    chan struct{}
 	stoppedCh chan struct{}
+
+	// activeViolations remembers which (object, rule) pairs produced a
+	// violation on the last evaluation. When a rule stops firing for an
+	// object that was previously in violation, the next evaluation emits a
+	// synthetic Message="resolved" violation so sinks (e.g. PolicyReport)
+	// can remove the stale entry. Keyed by object key
+	// "<gvk>|<namespace>/<name>" → set of rule names.
+	activeMu        sync.Mutex
+	activeByObject  map[string]map[string]api.Violation
 }
 
 // workItem is what informer handlers enqueue.
@@ -207,15 +216,16 @@ func New(
 	}
 
 	c := &Controller{
-		cfg:        cfg,
-		dyn:        dyn,
-		kube:       kube,
-		gvks:       gvks,
-		opts:       opts,
-		engine:     engine,
-		dispatcher: dispatcher,
-		sinks:      sinks,
-		informers:  map[schema.GroupVersionKind]cache.SharedIndexInformer{},
+		cfg:            cfg,
+		dyn:            dyn,
+		kube:           kube,
+		gvks:           gvks,
+		opts:           opts,
+		engine:         engine,
+		dispatcher:     dispatcher,
+		sinks:          sinks,
+		activeByObject: map[string]map[string]api.Violation{},
+		informers:      map[schema.GroupVersionKind]cache.SharedIndexInformer{},
 		listers:    map[schema.GroupVersionKind]cache.GenericLister{},
 		resForGVK:  opts.ResourceForGVK,
 		queue: workqueue.NewTypedRateLimitingQueue(
@@ -421,6 +431,9 @@ func (c *Controller) processItem(ctx context.Context, w workItem, onEvent func(a
 
 	if w.EventType == "delete" {
 		c.emitGCViolation(ctx, w, meta)
+		c.activeMu.Lock()
+		delete(c.activeByObject, fmt.Sprintf("%s|%s/%s", w.GVK, w.Namespace, w.Name))
+		c.activeMu.Unlock()
 		return
 	}
 
@@ -450,6 +463,8 @@ func (c *Controller) processItem(ctx context.Context, w workItem, onEvent func(a
 	// Build context(s) via the first builder that supports the GVK; fall
 	// back to a minimal generic builder if none matches.
 	ctxs := c.buildContexts(u)
+	objKey := fmt.Sprintf("%s|%s/%s", w.GVK, w.Namespace, w.Name)
+	current := map[string]api.Violation{}
 	for _, evalCtx := range ctxs {
 		violations := c.engine.Evaluate(evalCtx, meta)
 		// Always invoke onEvent so wire-up code can observe.
@@ -457,9 +472,32 @@ func (c *Controller) processItem(ctx context.Context, w workItem, onEvent func(a
 			onEvent(evalCtx, meta)
 		}
 		for _, v := range violations {
+			current[v.Rule] = v
 			c.fanOut(ctx, v)
 		}
 	}
+	// Diff against the previous active set to emit synthetic "resolved"
+	// for rules that fired before but didn't this time. Sinks decide what
+	// to do with the resolved emit (PolicyReport deletes the matching
+	// Result; AlertManager fires a clear alert; stdout logs it).
+	c.activeMu.Lock()
+	prev := c.activeByObject[objKey]
+	for rule, prevV := range prev {
+		if _, still := current[rule]; still {
+			continue
+		}
+		resolved := prevV
+		resolved.Message = "resolved"
+		resolved.At = now
+		resolved.Actions = nil
+		c.fanOut(ctx, resolved)
+	}
+	if len(current) == 0 {
+		delete(c.activeByObject, objKey)
+	} else {
+		c.activeByObject[objKey] = current
+	}
+	c.activeMu.Unlock()
 }
 
 // buildContexts iterates registered ContextBuilders; the first whose
