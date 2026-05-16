@@ -247,10 +247,14 @@ func applyPortalClusterRule(t *testing.T, name string, spec map[string]any) {
 		waitForRuleAbsent(t, name)
 	})
 	// Wait until the CRD's status reconciler has written .status.lastApplied
-	// — at that point the rule is loaded into the engine's index and the
-	// admission webhook will see it on the next request. Without this gate
-	// every test that creates a rule then immediately fires an admission
-	// request races the reconciler.
+	// — at that point at least one replica's audit reconciler has run
+	// idx.Replace + Reload. With 2 replicas each running their own
+	// controller-runtime Manager (no leader election on the CR loader),
+	// the second replica's index update can lag the status patch by tens
+	// to hundreds of milliseconds. Since admission requests land on
+	// either replica round-robin, we then sleep a short grace period to
+	// let the second replica catch up before the test fires its first
+	// admission / audit request. 1 s is generous for kind in CI.
 	eventuallyMsg(t, 30*time.Second, fmt.Sprintf("rule %q never reached status.lastApplied", name), func(ctx context.Context) (bool, error) {
 		got, err := e.dyn.Resource(gvrPortalClusterRule).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
@@ -259,6 +263,7 @@ func applyPortalClusterRule(t *testing.T, name string, spec map[string]any) {
 		_, ok, _ := unstructured.NestedString(got.Object, "status", "lastApplied")
 		return ok, nil
 	})
+	time.Sleep(1 * time.Second)
 }
 
 // waitForRuleAbsent polls the apiserver until the named PortalClusterRule is
