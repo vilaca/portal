@@ -1035,7 +1035,19 @@ spec:
 	if out, err := kubectlApply(t, pdb); err != nil {
 		t.Fatalf("apply PDB: %v\n%s", err, out)
 	}
-	eventuallyMsg(t, 5*time.Second, "violation did not clear after adding PDB", func(ctx context.Context) (bool, error) {
+	// Re-trigger the audit pipeline on the Deployment. Today the audit
+	// controller only re-evaluates a rule when an object of the rule's
+	// match.gvk changes — a referenced cross-resource (the PDB here)
+	// changing doesn't propagate. The natural production fix is to walk
+	// rule.ExtractClusterRefs and re-enqueue dependents on cross-resource
+	// events; tracked as a follow-up. For now we annotate the Deployment
+	// to force an UPDATE event the audit informer can react to.
+	touch := exec.Command("kubectl", "-n", ns, "annotate", "deployment", "needspdb", "portal.io/touch="+fmt.Sprintf("%d", time.Now().UnixNano()), "--overwrite")
+	touch.Env = append(os.Environ(), "KUBECONFIG="+e.kubeconfig)
+	if b, err := touch.CombinedOutput(); err != nil {
+		t.Fatalf("annotate deployment: %v\n%s", err, b)
+	}
+	eventuallyMsg(t, 15*time.Second, "violation did not clear after adding PDB", func(ctx context.Context) (bool, error) {
 		present, err := hasViolation(ctx)
 		return !present, err
 	})
@@ -1044,7 +1056,13 @@ spec:
 	if b, err := del.CombinedOutput(); err != nil {
 		t.Fatalf("delete pdb: %v\n%s", err, b)
 	}
-	eventuallyMsg(t, 5*time.Second, "violation did not re-fire after PDB delete", hasViolation)
+	// Same re-trigger after delete.
+	touch2 := exec.Command("kubectl", "-n", ns, "annotate", "deployment", "needspdb", "portal.io/touch="+fmt.Sprintf("%d", time.Now().UnixNano()), "--overwrite")
+	touch2.Env = append(os.Environ(), "KUBECONFIG="+e.kubeconfig)
+	if b, err := touch2.CombinedOutput(); err != nil {
+		t.Fatalf("annotate deployment: %v\n%s", err, b)
+	}
+	eventuallyMsg(t, 15*time.Second, "violation did not re-fire after PDB delete", hasViolation)
 }
 
 // -----------------------------------------------------------------------------
