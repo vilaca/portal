@@ -14,6 +14,7 @@ NetworkPolicy graphs declaratively.`,
 	}
 	root.AddCommand(newRunCmd())
 	root.AddCommand(newMigrateCmd())
+	root.AddCommand(newInitCertsCmd())
 	root.AddCommand(newDocgenCmd())
 	return root
 }

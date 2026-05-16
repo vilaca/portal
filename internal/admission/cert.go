@@ -110,23 +110,11 @@ func generateSelfSigned(dnsNames []string) (caCertPEM, leafCertPEM, leafKeyPEM [
 	return caCertPEM, leafCertPEM, leafKeyPEM, nil
 }
 
-// PatchWebhookConfiguration is a stub. The real client-go-based caBundle patch
-// is out of scope for the v1 process and is instead handled by:
-//
-//   - The Helm chart's `pre-install` Job, which generates certs, writes a
-//     Secret and patches the ValidatingWebhookConfiguration's caBundle; OR
-//   - cert-manager's `Certificate` + the standard
-//     `cert-manager.io/inject-ca-from` annotation on the WebhookConfiguration.
-//
-// In dev, run `kubectl patch validatingwebhookconfiguration <name> \
-// --type=json -p '[{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":"<b64>"}]'`
-// against the ca.crt produced by LoadOrGenerate.
-//
-// We deliberately keep this stub so cross-references from wire-up code give
-// the operator a clear error message instead of attempting an unsafe patch.
-func PatchWebhookConfiguration(_ any, _ string, _ []byte) error {
-	return errors.New("admission.PatchWebhookConfiguration: not implemented; use the chart's pre-install hook, cert-manager, or `kubectl patch` against ca.crt produced by LoadOrGenerate (see comment for details)")
-}
+// PatchWebhookConfiguration was previously a documented stub. The production
+// implementation lives in EnsureCerts (initcerts.go), which is what
+// `portal init-certs` runs from an init-container. cert-manager handles the
+// same job via its `cert-manager.io/inject-ca-from` annotation when
+// .Values.certManager.enabled is true in the Helm chart.
 
 func mustSerial() *big.Int {
 	maxSerial := new(big.Int).Lsh(big.NewInt(1), 128)

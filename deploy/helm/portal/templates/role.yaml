@@ -16,4 +16,14 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  {{- if not .Values.certManager.enabled }}
+  # init-certs reads/upserts the TLS Secret in the install namespace.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ include "portal.tlsSecretName" . | quote }}]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  {{- end }}
 {{- end }}

@@ -108,8 +108,6 @@ func TestLoadOrGenerateRejectsEmptyDir(t *testing.T) {
 	}
 }
 
-func TestPatchWebhookConfigurationIsStub(t *testing.T) {
-	if err := PatchWebhookConfiguration(nil, "x", []byte("ca")); err == nil {
-		t.Fatalf("expected stub error")
-	}
-}
+// The former TestPatchWebhookConfigurationIsStub was retired alongside the
+// PatchWebhookConfiguration stub. The production cert-injection path now lives
+// in EnsureCerts (initcerts.go); see initcerts_test.go for coverage.

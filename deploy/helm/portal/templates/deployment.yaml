@@ -46,6 +46,26 @@ spec:
                   matchLabels:
                     {{- include "portal.selectorLabels" . | nindent 20 }}
       {{- end }}
+      {{- if not .Values.certManager.enabled }}
+      initContainers:
+        - name: init-certs
+          image: {{ include "portal.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - init-certs
+            - --namespace={{ .Release.Namespace }}
+            - --secret={{ include "portal.tlsSecretName" . }}
+            - --webhook-config={{ include "portal.fullname" . }}
+            - --service={{ include "portal.fullname" . }}
+            - --cert-dir=/etc/portal/certs
+          volumeMounts:
+            - name: webhook-tls
+              mountPath: /etc/portal/certs
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- end }}
       containers:
         - name: portal
           image: {{ include "portal.image" . }}
@@ -117,9 +137,19 @@ spec:
           {{- end }}
       volumes:
         - name: webhook-tls
+          {{- if .Values.certManager.enabled }}
+          # cert-manager owns the Secret and rotates it; the main container
+          # mounts it read-only and reloads on file change.
           secret:
             secretName: {{ include "portal.tlsSecretName" . }}
             optional: true
+          {{- else }}
+          # init-certs writes the cert material into this shared emptyDir
+          # before the main container starts. The Secret is still upserted
+          # (for persistence across Pod restarts) but the runtime read path
+          # is this emptyDir to avoid kubelet Secret-refresh timing windows.
+          emptyDir: {}
+          {{- end }}
         {{- if .Values.rules.folderConfigMap }}
         - name: rules
           configMap:

@@ -45,10 +45,20 @@ rules:
   - apiGroups: ["policy"]
     resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch"]
-  # Webhook config — Portal patches its own caBundle on startup when not using cert-manager.
+  {{- if not .Values.certManager.enabled }}
+  # Webhook config — init-certs patches Portal's own caBundle on startup.
+  # Scoped to the chart's WebhookConfiguration by resourceNames so the grant
+  # is auditable. cert-manager replaces this path entirely when enabled.
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["validatingwebhookconfigurations"]
-    verbs: ["get", "list", "watch", "patch", "update"]
+    resourceNames: [{{ include "portal.fullname" . | quote }}]
+    verbs: ["get", "patch", "update"]
+  # Discovery on the list endpoint is unrestricted because resourceNames
+  # cannot apply to "list" or "watch" verbs; init-certs only uses "get".
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    verbs: ["list", "watch"]
+  {{- end }}
   # Portal CRs.
   - apiGroups: ["portal.io"]
     resources: ["portalclusterrules", "portalrules"]
