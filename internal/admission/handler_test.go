@@ -19,6 +19,9 @@ import (
 
 	"github.com/vilaca/portal/internal/api"
 	"github.com/vilaca/portal/internal/context/pod"
+	"github.com/vilaca/portal/internal/engine"
+	"github.com/vilaca/portal/internal/expr/exprlang"
+	"github.com/vilaca/portal/internal/rule"
 )
 
 // --- test doubles --------------------------------------------------------
@@ -474,4 +477,233 @@ func TestAggregateMixedActions(t *testing.T) {
 
 func contains(haystack, needle string) bool {
 	return bytes.Contains([]byte(haystack), []byte(needle))
+}
+
+// --- Real-engine reproduction of TestAdmissionDeny ----------------------
+//
+// These tests mirror exactly what the e2e test deploys against kind:
+//   - one PortalClusterRule with mode=[admission], enforcementAction=deny,
+//     match.gvk=[Pod], match.namespaces.include=[<ns>],
+//     rule=`container.securityContext.privileged == true`
+//   - one inbound AdmissionRequest for a privileged-container pod
+// and run them through the real api.RuleEngine + real pod ContextBuilder.
+// If the e2e flake is caused by a Go-side bug in decode/build/eval, one
+// of these will reproduce it locally; if they all pass, the bug must be
+// outside the Go code path (apiserver delivery shape, reconciler timing,
+// etc.).
+
+func TestRealEngine_DeniesPrivilegedPod_BlockYAMLShape(t *testing.T) {
+	runRealEngineDenyTest(t, privilegedPodJSONBlockStyle)
+}
+
+func TestRealEngine_DeniesPrivilegedPod_InlineYAMLShape(t *testing.T) {
+	runRealEngineDenyTest(t, privilegedPodJSONInlineStyle)
+}
+
+// privilegedPodJSONBlockStyle is what the apiserver would deliver for the
+// TestAdmissionDeny pod whose YAML uses the block-style containers list
+// (`containers:\n  - name: app\n    ...`). After kubectl + apiserver
+// serialisation it's the same canonical JSON either way; both literals
+// are kept here to prove that explicitly.
+const privilegedPodJSONBlockStyle = `{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "priv",
+    "namespace": "e2e-testadmissiondeny-block"
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "nginx",
+        "securityContext": {"privileged": true}
+      }
+    ]
+  }
+}`
+
+// privilegedPodJSONInlineStyle is the same pod as it would arrive when
+// the YAML used inline-flow containers (`containers: [{name: app, ...}]`).
+const privilegedPodJSONInlineStyle = `{"apiVersion":"v1","kind":"Pod","metadata":{"name":"priv","namespace":"e2e-testadmissiondeny-inline"},"spec":{"containers":[{"name":"app","image":"nginx","securityContext":{"privileged":true}}]}}`
+
+// privilegedPodJSONApiserverShape is the body the apiserver actually
+// delivers when kubectl apply'ing the TestAdmissionDeny pod — captured
+// from a local repro. Includes managedFields, defaulted fields,
+// generated volumes (kube-api-access projection), the pod-level
+// securityContext: {}, status.phase, etc. This is the shape my
+// hand-rolled canonical JSONs missed.
+const privilegedPodJSONApiserverShape = `{"kind":"Pod","apiVersion":"v1","metadata":{"name":"priv","namespace":"e2e-testadmissiondeny-apiserver","uid":"f1b14723-f873-4102-a400-610d8ac7521a","creationTimestamp":"2026-05-18T14:15:13Z","annotations":{"kubectl.kubernetes.io/last-applied-configuration":"{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"name\":\"priv\",\"namespace\":\"e2e-testadmissiondeny-apiserver\"},\"spec\":{\"containers\":[{\"image\":\"nginx\",\"name\":\"app\",\"securityContext\":{\"privileged\":true}}]}}\n"},"managedFields":[{"manager":"kubectl-client-side-apply","operation":"Update","apiVersion":"v1","time":"2026-05-18T14:15:13Z","fieldsType":"FieldsV1","fieldsV1":{"f:metadata":{"f:annotations":{".":{},"f:kubectl.kubernetes.io/last-applied-configuration":{}}},"f:spec":{"f:containers":{"k:{\"name\":\"app\"}":{".":{},"f:image":{},"f:imagePullPolicy":{},"f:name":{},"f:resources":{},"f:securityContext":{".":{},"f:privileged":{}},"f:terminationMessagePath":{},"f:terminationMessagePolicy":{}}},"f:dnsPolicy":{},"f:enableServiceLinks":{},"f:restartPolicy":{},"f:schedulerName":{},"f:securityContext":{},"f:terminationGracePeriodSeconds":{}}}}]},"spec":{"volumes":[{"name":"kube-api-access-qng4n","projected":{"sources":[{"serviceAccountToken":{"expirationSeconds":3607,"path":"token"}},{"configMap":{"name":"kube-root-ca.crt","items":[{"key":"ca.crt","path":"ca.crt"}]}},{"downwardAPI":{"items":[{"path":"namespace","fieldRef":{"apiVersion":"v1","fieldPath":"metadata.namespace"}}]}}],"defaultMode":420}}],"containers":[{"name":"app","image":"nginx","resources":{},"volumeMounts":[{"name":"kube-api-access-qng4n","readOnly":true,"mountPath":"/var/run/secrets/kubernetes.io/serviceaccount"}],"terminationMessagePath":"/dev/termination-log","terminationMessagePolicy":"File","imagePullPolicy":"Always","securityContext":{"privileged":true}}],"restartPolicy":"Always","terminationGracePeriodSeconds":30,"dnsPolicy":"ClusterFirst","serviceAccountName":"default","serviceAccount":"default","securityContext":{},"schedulerName":"default-scheduler","tolerations":[{"key":"node.kubernetes.io/not-ready","operator":"Exists","effect":"NoExecute","tolerationSeconds":300},{"key":"node.kubernetes.io/unreachable","operator":"Exists","effect":"NoExecute","tolerationSeconds":300}],"priority":0,"enableServiceLinks":true,"preemptionPolicy":"PreemptLowerPriority"},"status":{"phase":"Pending","qosClass":"BestEffort"}}`
+
+func TestRealEngine_DeniesPrivilegedPod_ApiserverShape(t *testing.T) {
+	runRealEngineDenyTest(t, privilegedPodJSONApiserverShape)
+}
+
+func runRealEngineDenyTest(t *testing.T, podJSON string) {
+	t.Helper()
+	// Real rule index + real expr-lang engine — same wiring as wire.go.
+	idx := rule.NewIndex()
+	idx.Replace([]api.Rule{{
+		Name:              "e2e-deny-privileged",
+		Enabled:           true,
+		Severity:          api.SeverityCritical,
+		Mode:              []api.Mode{api.ModeAdmission},
+		EnforcementAction: api.EnforceDeny,
+		Match: api.Matcher{
+			GVK: []schema.GroupVersionKind{{Group: "", Version: "v1", Kind: "Pod"}},
+			Namespaces: api.NamespaceSelector{
+				Include: []string{namespaceFromJSON(t, podJSON)},
+			},
+		},
+		Expression: "container.securityContext.privileged == true",
+	}})
+	eng, err := engine.New(idx, exprlang.New())
+	if err != nil {
+		t.Fatalf("engine.New: %v", err)
+	}
+
+	disp := &stubDispatcher{}
+	s := newTestSource(t, eng, disp, nil, Options{})
+
+	review := &admissionv1.AdmissionReview{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "admission.k8s.io/v1",
+			Kind:       "AdmissionReview",
+		},
+		Request: &admissionv1.AdmissionRequest{
+			UID:       types.UID("uid-real-engine"),
+			Kind:      metav1.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"},
+			Resource:  metav1.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+			Name:      "priv",
+			Namespace: namespaceFromJSON(t, podJSON),
+			Operation: admissionv1.Create,
+			Object:    runtime.RawExtension{Raw: []byte(podJSON)},
+			UserInfo: authenticationv1.UserInfo{
+				Username: "tester@example.com",
+				Groups:   []string{"system:authenticated"},
+			},
+		},
+	}
+	resp := doRequest(t, s.Handler(), review)
+
+	if resp.Response == nil {
+		t.Fatalf("nil response")
+	}
+	if resp.Response.Allowed {
+		t.Fatalf("expected Allowed=false; got Allowed=true. result=%+v", resp.Response.Result)
+	}
+	if resp.Response.Result == nil || !contains(resp.Response.Result.Message, "e2e-deny-privileged") {
+		t.Errorf("expected deny message to name the rule, got: %+v", resp.Response.Result)
+	}
+}
+
+// TestRealEngine_ConcurrentReloadDuringAdmission stresses the same code
+// path while a concurrent goroutine keeps Index.Replace / Reload-cycling.
+// If the CI flake is a race between the audit reconciler reloading the
+// engine and the admission handler reading from it, this test should
+// surface it. Runs for ~1 s with admission requests at ~kHz and reloads
+// at ~10/s — matches the rough cadence of the e2e burst.
+func TestRealEngine_ConcurrentReloadDuringAdmission(t *testing.T) {
+	ns := "e2e-stress"
+	idx := rule.NewIndex()
+	denyRule := api.Rule{
+		Name:              "e2e-deny-privileged",
+		Enabled:           true,
+		Severity:          api.SeverityCritical,
+		Mode:              []api.Mode{api.ModeAdmission},
+		EnforcementAction: api.EnforceDeny,
+		Match: api.Matcher{
+			GVK: []schema.GroupVersionKind{{Group: "", Version: "v1", Kind: "Pod"}},
+			Namespaces: api.NamespaceSelector{
+				Include: []string{ns},
+			},
+		},
+		Expression: "container.securityContext.privileged == true",
+	}
+	idx.Replace([]api.Rule{denyRule})
+
+	eng, err := engine.New(idx, exprlang.New())
+	if err != nil {
+		t.Fatalf("engine.New: %v", err)
+	}
+	reloader, _ := eng.(interface{ Reload() })
+
+	disp := &stubDispatcher{}
+	s := newTestSource(t, eng, disp, nil, Options{})
+	hh := s.Handler()
+
+	podJSON := []byte(`{"apiVersion":"v1","kind":"Pod","metadata":{"name":"priv","namespace":"` + ns + `"},"spec":{"containers":[{"name":"app","image":"nginx","securityContext":{"privileged":true}}]}}`)
+
+	stop := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				idx.Replace([]api.Rule{denyRule})
+				if reloader != nil {
+					reloader.Reload()
+				}
+			}
+		}
+	}()
+	defer close(stop)
+
+	var (
+		denied  int
+		allowed int
+	)
+	for i := 0; i < 200; i++ {
+		review := &admissionv1.AdmissionReview{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "admission.k8s.io/v1",
+				Kind:       "AdmissionReview",
+			},
+			Request: &admissionv1.AdmissionRequest{
+				UID:       types.UID("uid-stress"),
+				Kind:      metav1.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"},
+				Resource:  metav1.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+				Name:      "priv",
+				Namespace: ns,
+				Operation: admissionv1.Create,
+				Object:    runtime.RawExtension{Raw: podJSON},
+				UserInfo: authenticationv1.UserInfo{
+					Username: "tester@example.com",
+				},
+			},
+		}
+		resp := doRequest(t, hh, review)
+		if resp.Response.Allowed {
+			allowed++
+		} else {
+			denied++
+		}
+	}
+
+	if allowed != 0 {
+		t.Fatalf("under concurrent Reload: %d/200 admissions returned allowed (expected 0)", allowed)
+	}
+	if denied != 200 {
+		t.Fatalf("expected 200 denials, got %d", denied)
+	}
+}
+
+// namespaceFromJSON extracts metadata.namespace from a pod JSON literal,
+// so the rule's Include list matches the AdmissionRequest's namespace
+// without test-side string juggling.
+func namespaceFromJSON(t *testing.T, podJSON string) string {
+	t.Helper()
+	var probe struct {
+		Metadata struct {
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(podJSON), &probe); err != nil {
+		t.Fatalf("namespaceFromJSON: %v", err)
+	}
+	if probe.Metadata.Namespace == "" {
+		t.Fatalf("namespaceFromJSON: pod JSON has no metadata.namespace")
+	}
+	return probe.Metadata.Namespace
 }
