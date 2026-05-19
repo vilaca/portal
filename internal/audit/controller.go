@@ -500,24 +500,33 @@ func (c *Controller) processItem(ctx context.Context, w workItem, onEvent func(a
 	c.activeMu.Unlock()
 }
 
-// buildContexts iterates registered ContextBuilders; the first whose
-// Supports(gvk) is true wins. Pod-shaped builders may produce multiple
-// per-container contexts; the dummy fallback produces exactly one.
+// buildContexts iterates registered ContextBuilders. Multi-container
+// (pod-shaped) builders are tried first across all builders so the pod
+// builder still wins even if a catch-all builder (e.g. internal/context/
+// generic) appears earlier in the slice — wire.go populates this from a
+// Go map, which has no guaranteed iteration order. Pod-shaped builders
+// may produce multiple per-container contexts; non-pod builders produce
+// exactly one. The dummy fallback at the end produces one when no
+// registered builder claims the GVK.
 func (c *Controller) buildContexts(u *unstructured.Unstructured) []api.Context {
 	gvk := u.GroupVersionKind()
 	for _, b := range c.opts.ContextBuilders {
 		if !b.Supports(gvk) {
 			continue
 		}
-		// If the builder is the pod builder we want every container.
-		if pb, ok := b.(*pod.Builder); ok {
-			out, err := pb.BuildAll(u)
-			if err == nil {
-				return out
-			}
+		pb, ok := b.(*pod.Builder)
+		if !ok {
+			continue
 		}
-		ctx, err := b.Build(u)
-		if err == nil {
+		if out, err := pb.BuildAll(u); err == nil && len(out) > 0 {
+			return out
+		}
+	}
+	for _, b := range c.opts.ContextBuilders {
+		if !b.Supports(gvk) {
+			continue
+		}
+		if ctx, err := b.Build(u); err == nil {
 			return []api.Context{ctx}
 		}
 	}

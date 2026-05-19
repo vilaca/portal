@@ -288,18 +288,28 @@ func (h *handler) namespaceBypassed(req *admissionv1.AdmissionRequest) bool {
 }
 
 // buildContexts walks the registered builders and asks the first one whose
-// Supports(gvk)==true to produce contexts. The pod builder is preferred via
-// BuildAll. If no builder claims the GVK, a single fallback context is built
-// containing the unstructured object.
+// Supports(gvk)==true to produce contexts. Multi-container (podBuildAller)
+// builders are tried first across all registered builders, so a more-specific
+// pod-shaped builder wins even if a permissive catch-all builder (e.g.
+// internal/context/generic) is iterated earlier — h.builders comes from a
+// Go map and has no guaranteed order. If no builder claims the GVK, a single
+// fallback context is built containing the unstructured object.
 func (h *handler) buildContexts(obj *unstructured.Unstructured, gvk schema.GroupVersionKind) []api.Context {
 	for _, b := range h.builders {
 		if b == nil || !b.Supports(gvk) {
 			continue
 		}
-		if multi, ok := b.(podBuildAller); ok {
-			if ctxs, err := multi.BuildAll(obj); err == nil && len(ctxs) > 0 {
-				return ctxs
-			}
+		multi, ok := b.(podBuildAller)
+		if !ok {
+			continue
+		}
+		if ctxs, err := multi.BuildAll(obj); err == nil && len(ctxs) > 0 {
+			return ctxs
+		}
+	}
+	for _, b := range h.builders {
+		if b == nil || !b.Supports(gvk) {
+			continue
 		}
 		if c, err := b.Build(obj); err == nil {
 			return []api.Context{c}

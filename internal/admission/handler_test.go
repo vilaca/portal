@@ -707,3 +707,89 @@ func namespaceFromJSON(t *testing.T, podJSON string) string {
 	}
 	return probe.Metadata.Namespace
 }
+
+// catchAllBuilder is a test double for a non-pod ContextBuilder whose
+// Supports() returns true for every GVK — same shape as the generic
+// builder in internal/context/generic. Its Build() returns a context
+// with NO container key, mirroring how a catch-all would handle a Pod.
+type catchAllBuilder struct{}
+
+func (catchAllBuilder) Supports(_ schema.GroupVersionKind) bool { return true }
+
+func (catchAllBuilder) Build(obj *unstructured.Unstructured) (api.Context, error) {
+	return api.Context{
+		GVK:    obj.GroupVersionKind(),
+		Object: obj,
+		Env: map[string]any{
+			"object":   obj.Object,
+			"metadata": map[string]any{"name": obj.GetName(), "namespace": obj.GetNamespace()},
+		},
+	}, nil
+}
+
+// TestRealEngine_PodBuilderWinsOverCatchAllRegardlessOfOrder is the
+// regression test for the production flake where wire.go iterated
+// api.ContextBuilders() (a Go map, unordered) into handler.builders.
+// If the catch-all builder happened to come first, handler.buildContexts
+// returned its container-less context, the rule eval hit a nil container,
+// the privileged pod was admitted, and TestAdmissionDeny failed roughly
+// 80% of the time. The fix in handler.buildContexts prefers any
+// podBuildAller across all builders before falling back to single-context
+// builders. This test asserts that invariant in both possible orderings.
+func TestRealEngine_PodBuilderWinsOverCatchAllRegardlessOfOrder(t *testing.T) {
+	cases := []struct {
+		name     string
+		builders []api.ContextBuilder
+	}{
+		{"catchAllFirst", []api.ContextBuilder{catchAllBuilder{}, pod.New()}},
+		{"podFirst", []api.ContextBuilder{pod.New(), catchAllBuilder{}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			idx := rule.NewIndex()
+			idx.Replace([]api.Rule{{
+				Name:              "e2e-deny-privileged",
+				Enabled:           true,
+				Severity:          api.SeverityCritical,
+				Mode:              []api.Mode{api.ModeAdmission},
+				EnforcementAction: api.EnforceDeny,
+				Match: api.Matcher{
+					GVK: []schema.GroupVersionKind{{Group: "", Version: "v1", Kind: "Pod"}},
+					Namespaces: api.NamespaceSelector{
+						Include: []string{namespaceFromJSON(t, privilegedPodJSONApiserverShape)},
+					},
+				},
+				Expression: "container.securityContext.privileged == true",
+			}})
+			eng, err := engine.New(idx, exprlang.New())
+			if err != nil {
+				t.Fatalf("engine.New: %v", err)
+			}
+			s := newTestSource(t, eng, &stubDispatcher{}, nil, Options{ContextBuilders: tc.builders})
+
+			review := &admissionv1.AdmissionReview{
+				TypeMeta: metav1.TypeMeta{APIVersion: "admission.k8s.io/v1", Kind: "AdmissionReview"},
+				Request: &admissionv1.AdmissionRequest{
+					UID:       types.UID("uid-order-" + tc.name),
+					Kind:      metav1.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"},
+					Resource:  metav1.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+					Name:      "priv",
+					Namespace: namespaceFromJSON(t, privilegedPodJSONApiserverShape),
+					Operation: admissionv1.Create,
+					Object:    runtime.RawExtension{Raw: []byte(privilegedPodJSONApiserverShape)},
+					UserInfo: authenticationv1.UserInfo{
+						Username: "tester@example.com",
+						Groups:   []string{"system:authenticated"},
+					},
+				},
+			}
+			resp := doRequest(t, s.Handler(), review)
+			if resp.Response == nil {
+				t.Fatalf("nil response")
+			}
+			if resp.Response.Allowed {
+				t.Fatalf("expected Allowed=false; got Allowed=true. result=%+v", resp.Response.Result)
+			}
+		})
+	}
+}
