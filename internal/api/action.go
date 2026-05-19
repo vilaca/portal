@@ -15,6 +15,17 @@ type Action interface {
 	DefaultRateLimit() time.Duration
 }
 
+// TargetScoper is an optional contract that Actions whose target object
+// diverges from (Violation.Namespace, Violation.Name) implement so the
+// dispatcher can compute the effective target without invoking the Action.
+// Used by the scope check that bounds PortalRule-origin rules to their CR
+// namespace. Returning an empty namespace means "scope check inapplicable
+// for this combination" — the dispatcher will fall back to (v.Namespace,
+// v.Name).
+type TargetScoper interface {
+	TargetScope(v Violation, params map[string]any) (namespace, name string)
+}
+
 // ActionDispatcher routes Violations to enabled Actions. It is non-blocking,
 // applies rate-limiting per (rule, target) tuple, and consults an
 // IdempotencyStore so re-emissions within the action's idempotency window are

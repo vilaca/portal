@@ -84,6 +84,38 @@ func TestNewRejectsNil(t *testing.T) {
 	}
 }
 
+// TestViolationCarriesRuleSource confirms the rule's Source struct is
+// copied onto every Violation it produces. The action dispatcher relies on
+// Violation.RuleSource.Origin / Namespace for scope enforcement, so a
+// silent drop would re-open the PortalRule cross-namespace escape.
+func TestViolationCarriesRuleSource(t *testing.T) {
+	idx := &stubIndex{rules: []api.Rule{
+		{
+			Name:       "scoped",
+			Expression: "always",
+			Match:      api.Matcher{GVK: []schema.GroupVersionKind{podGVK}},
+			Source: api.RuleSource{
+				Origin:    "PortalRule",
+				Path:      "tenant-a/scoped",
+				UID:       "uid-rs",
+				Namespace: "tenant-a",
+			},
+		},
+	}}
+	eng := &stubEngine{progs: map[string]*stubProgram{"always": {out: true}}}
+	e, err := New(idx, eng)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	vs := e.Evaluate(podCtx("tenant-a", "p1"), api.EventMeta{Source: "audit"})
+	if len(vs) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(vs))
+	}
+	if got := vs[0].RuleSource; got.Origin != "PortalRule" || got.Namespace != "tenant-a" || got.UID != "uid-rs" {
+		t.Fatalf("Violation.RuleSource = %+v; want PortalRule/tenant-a/uid-rs", got)
+	}
+}
+
 func TestGVKRouting(t *testing.T) {
 	idx := &stubIndex{rules: []api.Rule{
 		{Name: "pod-rule", Expression: "always", Match: api.Matcher{GVK: []schema.GroupVersionKind{podGVK}}},

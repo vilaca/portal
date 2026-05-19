@@ -19,9 +19,12 @@ package admission
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -56,6 +59,15 @@ type Options struct {
 
 	// CertFile and KeyFile are the TLS material served on Listen.
 	CertFile, KeyFile string
+
+	// ClientCAFile is an optional PEM bundle used to verify the client
+	// certificate of webhook callers. When set, the server requires every
+	// connection to present a certificate that chains to this bundle
+	// (tls.RequireAndVerifyClientCert). Empty disables client-cert
+	// verification and preserves the legacy behaviour where any in-cluster
+	// caller can reach the webhook — the server emits a single startup
+	// warning in that case.
+	ClientCAFile string
 
 	// FailClosed is advisory only — the real failurePolicy lives in the Helm
 	// chart. Kept here so wire-up can log a warning if the chart and process
@@ -152,9 +164,14 @@ func (s *server) Start(ctx context.Context, _ func(api.Context, api.EventMeta)) 
 	mux.Handle("/validate", s.handler)
 	mux.Handle("/", s.handler) // permissive — kube-apiserver hits whatever path the WebhookConfiguration specifies.
 
-	tlsCfg, err := loadTLS(s.opts.CertFile, s.opts.KeyFile)
+	tlsCfg, err := loadTLS(s.opts.CertFile, s.opts.KeyFile, s.opts.ClientCAFile)
 	if err != nil {
 		return fmt.Errorf("admission.Start: load TLS: %w", err)
+	}
+	if tlsCfg != nil && s.opts.ClientCAFile == "" {
+		slog.Warn("admission webhook serving without client certificate verification",
+			"remediation", "set --client-ca-file (or webhook.clientCAFile in helm) to a PEM bundle containing the apiserver client CA",
+		)
 	}
 
 	srv := &http.Server{
@@ -197,10 +214,12 @@ func (s *server) Stop(ctx context.Context) error {
 	return srv.Shutdown(ctx)
 }
 
-// loadTLS loads the leaf certificate/key into a *tls.Config. When the inputs
-// are empty (tests), it returns a nil config so the caller may serve plain
-// HTTP (httptest.NewServer scenarios).
-func loadTLS(certFile, keyFile string) (*tls.Config, error) {
+// loadTLS loads the leaf certificate/key into a *tls.Config. When certFile
+// and keyFile are both empty (tests), it returns a nil config so the caller
+// may serve plain HTTP (httptest.NewServer scenarios). When clientCAFile is
+// non-empty, the returned config requires every TLS client to present a
+// certificate chaining to that bundle.
+func loadTLS(certFile, keyFile, clientCAFile string) (*tls.Config, error) {
 	if certFile == "" && keyFile == "" {
 		return nil, nil
 	}
@@ -208,10 +227,23 @@ func loadTLS(certFile, keyFile string) (*tls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &tls.Config{
+	cfg := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
-	}, nil
+	}
+	if clientCAFile != "" {
+		pem, err := os.ReadFile(clientCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read client CA file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("client CA file %q contained no PEM certificates", clientCAFile)
+		}
+		cfg.ClientCAs = pool
+		cfg.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+	return cfg, nil
 }
 
 // Handler exposes the underlying http.Handler so tests (and the composition

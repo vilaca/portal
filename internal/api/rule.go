@@ -71,12 +71,17 @@ type Rule struct {
 	Source RuleSource `json:"-" yaml:"-"`
 }
 
-// RuleSource records the origin of a Rule for diagnostics.
+// RuleSource records the origin of a Rule for diagnostics and for
+// dispatch-time scope enforcement.
 type RuleSource struct {
 	Origin    string // "folder", "PortalClusterRule", "PortalRule"
 	Path      string // file path or CR name/namespace
 	UID       string // CR UID when applicable
 	Generated bool   // true if produced by migrate-rules
+	// Namespace is the namespace of the originating CR. Non-empty only for
+	// PortalRule (namespace-scoped). The action dispatcher uses this to
+	// refuse actions whose target namespace falls outside the CR's scope.
+	Namespace string
 }
 
 // HasMode reports whether the rule opts into the given evaluation mode.

@@ -42,9 +42,10 @@ func PortalRuleSpecToRule(spec PortalRuleSpec, meta metav1.ObjectMeta) api.Rule 
 		r.Enabled = false
 	}
 	r.Source = api.RuleSource{
-		Origin: "PortalRule",
-		Path:   path,
-		UID:    string(meta.UID),
+		Origin:    "PortalRule",
+		Path:      path,
+		UID:       string(meta.UID),
+		Namespace: meta.Namespace,
 	}
 	return r
 }

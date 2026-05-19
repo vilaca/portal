@@ -2,7 +2,10 @@ package admission
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -103,3 +106,123 @@ func TestNilDispatcherAndSinksTolerated(t *testing.T) {
 // Probe that the (api.EventSource) Stop on a never-started server uses
 // errors.Is on http.ErrServerClosed correctly — actually a noop here.
 var _ = errors.Is // keep imports tidy if Stop's Shutdown semantics change
+
+// writeSelfSignedBundle writes a fresh CA+leaf+key to dir and returns the
+// paths. Reuses internal/admission/cert.go's generateSelfSigned so we don't
+// duplicate cert assembly.
+func writeSelfSignedBundle(t *testing.T, dir string) (certFile, keyFile, caFile string) {
+	t.Helper()
+	caPEM, leafPEM, leafKeyPEM, err := generateSelfSigned([]string{"localhost"})
+	if err != nil {
+		t.Fatalf("generateSelfSigned: %v", err)
+	}
+	certFile = filepath.Join(dir, "tls.crt")
+	keyFile = filepath.Join(dir, "tls.key")
+	caFile = filepath.Join(dir, "ca.crt")
+	for _, w := range []struct {
+		path string
+		data []byte
+	}{
+		{certFile, leafPEM},
+		{keyFile, leafKeyPEM},
+		{caFile, caPEM},
+	} {
+		if err := os.WriteFile(w.path, w.data, 0o600); err != nil {
+			t.Fatalf("write %s: %v", w.path, err)
+		}
+	}
+	return certFile, keyFile, caFile
+}
+
+func TestLoadTLS_EmptyReturnsNil(t *testing.T) {
+	cfg, err := loadTLS("", "", "")
+	if err != nil {
+		t.Fatalf("loadTLS: %v", err)
+	}
+	if cfg != nil {
+		t.Errorf("expected nil config for empty inputs, got %+v", cfg)
+	}
+}
+
+func TestLoadTLS_NoClientCAKeepsLegacyBehavior(t *testing.T) {
+	dir := t.TempDir()
+	certFile, keyFile, _ := writeSelfSignedBundle(t, dir)
+	cfg, err := loadTLS(certFile, keyFile, "")
+	if err != nil {
+		t.Fatalf("loadTLS: %v", err)
+	}
+	if cfg == nil {
+		t.Fatalf("expected non-nil tls.Config")
+	}
+	if cfg.ClientAuth != tls.NoClientCert {
+		t.Errorf("ClientAuth = %v, want NoClientCert (legacy behavior)", cfg.ClientAuth)
+	}
+	if cfg.ClientCAs != nil {
+		t.Errorf("ClientCAs should be nil when no client CA configured")
+	}
+	if cfg.MinVersion != tls.VersionTLS12 {
+		t.Errorf("MinVersion = %v, want TLS 1.2", cfg.MinVersion)
+	}
+}
+
+func TestLoadTLS_ClientCABundleRequiresClientCert(t *testing.T) {
+	dir := t.TempDir()
+	certFile, keyFile, caFile := writeSelfSignedBundle(t, dir)
+	cfg, err := loadTLS(certFile, keyFile, caFile)
+	if err != nil {
+		t.Fatalf("loadTLS: %v", err)
+	}
+	if cfg == nil {
+		t.Fatalf("expected non-nil tls.Config")
+	}
+	if cfg.ClientAuth != tls.RequireAndVerifyClientCert {
+		t.Errorf("ClientAuth = %v, want RequireAndVerifyClientCert", cfg.ClientAuth)
+	}
+	if cfg.ClientCAs == nil {
+		t.Fatalf("ClientCAs is nil — bundle did not load")
+	}
+}
+
+func TestLoadTLS_ClientCAEmptyPEMErrors(t *testing.T) {
+	dir := t.TempDir()
+	certFile, keyFile, _ := writeSelfSignedBundle(t, dir)
+	emptyCA := filepath.Join(dir, "empty-ca.crt")
+	if err := os.WriteFile(emptyCA, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatalf("write empty CA: %v", err)
+	}
+	if _, err := loadTLS(certFile, keyFile, emptyCA); err == nil {
+		t.Fatalf("expected error for client CA file with no PEM certificates")
+	}
+}
+
+func TestLoadTLS_ClientCAMissingFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	certFile, keyFile, _ := writeSelfSignedBundle(t, dir)
+	if _, err := loadTLS(certFile, keyFile, filepath.Join(dir, "does-not-exist.crt")); err == nil {
+		t.Fatalf("expected error for missing client CA file")
+	}
+}
+
+// Smoke: New + Start with ClientCAFile populated should not error on TLS
+// config assembly. We don't actually open a listener here; Start does, so we
+// just verify loadTLS works against a real bundle.
+func TestNewWithClientCAFile(t *testing.T) {
+	dir := t.TempDir()
+	certFile, keyFile, caFile := writeSelfSignedBundle(t, dir)
+	src, err := New(&stubEngine{}, nil, nil, Options{
+		Listen:       "127.0.0.1:0",
+		CertFile:     certFile,
+		KeyFile:      keyFile,
+		ClientCAFile: caFile,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	cfg, err := loadTLS(src.(*server).opts.CertFile, src.(*server).opts.KeyFile, src.(*server).opts.ClientCAFile)
+	if err != nil {
+		t.Fatalf("loadTLS: %v", err)
+	}
+	if cfg.ClientAuth != tls.RequireAndVerifyClientCert {
+		t.Errorf("expected RequireAndVerifyClientCert, got %v", cfg.ClientAuth)
+	}
+}

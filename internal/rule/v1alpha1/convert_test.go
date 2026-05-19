@@ -131,6 +131,44 @@ func TestPortalRuleSpecToRule_ClampsScopeToOwnNamespace(t *testing.T) {
 	}
 }
 
+// TestPortalRuleSpecToRule_PopulatesSourceNamespace verifies that the
+// CR namespace is propagated into Source.Namespace so the action
+// dispatcher can use it for scope enforcement.
+func TestPortalRuleSpecToRule_PopulatesSourceNamespace(t *testing.T) {
+	spec := RuleSpec{
+		Name:       "scope-test",
+		Enabled:    true,
+		Match:      Matcher{GVK: []RuleGVK{{Group: "", Version: "v1", Kind: "Pod"}}},
+		Expression: "true",
+	}
+	meta := metav1.ObjectMeta{Name: "scope-test", Namespace: "tenant-a", UID: types.UID("uid-s")}
+
+	got := PortalRuleSpecToRule(spec, meta)
+
+	if got.Source.Namespace != "tenant-a" {
+		t.Errorf("Source.Namespace = %q, want %q", got.Source.Namespace, "tenant-a")
+	}
+}
+
+// TestPortalClusterRuleSpecToRule_LeavesSourceNamespaceEmpty confirms cluster-
+// scoped CRs carry no Source.Namespace, so the dispatcher's PortalRule scope
+// check is bypassed for them (operator-trusted origin).
+func TestPortalClusterRuleSpecToRule_LeavesSourceNamespaceEmpty(t *testing.T) {
+	spec := RuleSpec{
+		Name:       "cluster",
+		Enabled:    true,
+		Match:      Matcher{GVK: []RuleGVK{{Group: "", Version: "v1", Kind: "Pod"}}},
+		Expression: "true",
+	}
+	meta := metav1.ObjectMeta{Name: "cluster", UID: types.UID("uid-c")}
+
+	got := PortalClusterRuleSpecToRule(spec, meta)
+
+	if got.Source.Namespace != "" {
+		t.Errorf("PortalClusterRule must have empty Source.Namespace, got %q", got.Source.Namespace)
+	}
+}
+
 // TestPortalRuleSpecToRule_EmptyNamespaceDisables guards the defensive branch:
 // a namespace-scoped CRD should never reach this code with an empty Namespace,
 // but if it does (e.g., test fixture, in-memory loader), we refuse to grant

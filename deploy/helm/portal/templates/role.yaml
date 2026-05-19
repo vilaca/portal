@@ -16,14 +16,7 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
-  {{- if not .Values.certManager.enabled }}
-  # init-certs reads/upserts the TLS Secret in the install namespace.
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: [{{ include "portal.tlsSecretName" . | quote }}]
-    verbs: ["get", "update", "patch"]
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["create"]
-  {{- end }}
+  # The bootstrap Job (see init-certs-job.yaml) holds the Secret upsert
+  # verbs against the chart's TLS Secret. The runtime SA reads the Secret
+  # via the kubelet-mounted volume; it does not need API access.
 {{- end }}

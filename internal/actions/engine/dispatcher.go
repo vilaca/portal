@@ -42,6 +42,10 @@ const (
 	resultRateLimited = "ratelimited"
 	resultUnknown     = "unknown"
 	resultDropped     = "dropped"
+	// resultOutOfScope counts actions refused because a PortalRule tried to
+	// fire on a target outside its CR's namespace. PortalClusterRule and
+	// folder-origin rules are operator-trusted and never hit this label.
+	resultOutOfScope = "out_of_scope"
 )
 
 // Options controls dispatcher concurrency. Zero values fall back to sane
@@ -164,14 +168,28 @@ func (d *dispatcher) runSpec(v api.Violation, spec api.ActionSpec) {
 		return
 	}
 
-	// 3. Idempotency.
+	// 3. Scope check — namespace-scoped PortalRule cannot drive an action
+	// against an object outside its CR namespace. PortalClusterRule and
+	// folder-origin rules are operator-trusted and pass through unchanged.
+	if err := d.checkScope(action, v, spec.Params); err != nil {
+		prom.ActionsTotal.WithLabelValues(spec.Type, resultOutOfScope).Inc()
+		d.log.Warn("action refused: target outside rule scope",
+			"rule", v.Rule,
+			"action", spec.Type,
+			"ruleNamespace", v.RuleSource.Namespace,
+			"err", err.Error(),
+		)
+		return
+	}
+
+	// 4. Idempotency.
 	key := idemKey(v.Rule, v.GVK.String(), v.Namespace, v.Name, spec.Type)
 	if d.idem != nil && d.idem.Seen(key, action.DefaultRateLimit()*2) {
 		prom.ActionsTotal.WithLabelValues(spec.Type, resultDuplicate).Inc()
 		return
 	}
 
-	// 4. Rate limit. Key is per (rule, action) so the rateLimit value is
+	// 5. Rate limit. Key is per (rule, action) so the rateLimit value is
 	// the cluster-wide cap for that rule+action — idempotency above already
 	// handles same-target dedup, which would otherwise make a per-pod key
 	// here redundant.
@@ -184,7 +202,7 @@ func (d *dispatcher) runSpec(v api.Violation, spec api.ActionSpec) {
 		}
 	}
 
-	// 5. Execute.
+	// 6. Execute.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	err := action.Execute(ctx, v, spec.Params)
@@ -194,6 +212,48 @@ func (d *dispatcher) runSpec(v api.Violation, spec api.ActionSpec) {
 	}
 	prom.ActionsTotal.WithLabelValues(spec.Type, result).Inc()
 	d.audit(v, spec, result, err)
+}
+
+// checkScope enforces the action target allow-list described in
+// docs/POC-TO-PRODUCTION.md item 21: a PortalRule (namespace-scoped CR)
+// must not produce an action whose target object lives outside the CR's
+// own namespace. PortalClusterRule, folder-loaded, and source-less rules
+// pass through unchanged because their authors are trusted operator-level
+// principals.
+//
+// The default target is (v.Namespace, v.Name). Actions whose target
+// diverges (currently only patchnp via params.targetNamespace) implement
+// api.TargetScoper to expose the actual target.
+func (d *dispatcher) checkScope(action api.Action, v api.Violation, params map[string]any) error {
+	if v.RuleSource.Origin != "PortalRule" {
+		return nil
+	}
+	scope := v.RuleSource.Namespace
+	if scope == "" {
+		// PortalRule with no namespace recorded is malformed; refuse.
+		return errOutOfScope{target: v.Namespace, scope: ""}
+	}
+	targetNS := v.Namespace
+	if s, ok := action.(api.TargetScoper); ok {
+		if ns, _ := s.TargetScope(v, params); ns != "" {
+			targetNS = ns
+		}
+	}
+	if targetNS != scope {
+		return errOutOfScope{target: targetNS, scope: scope}
+	}
+	return nil
+}
+
+// errOutOfScope is a typed sentinel so tests can assert the rejection
+// without string matching.
+type errOutOfScope struct {
+	target string
+	scope  string
+}
+
+func (e errOutOfScope) Error() string {
+	return "target namespace " + strconv.Quote(e.target) + " outside PortalRule scope " + strconv.Quote(e.scope)
 }
 
 // audit emits the JSON line described in POC-TO-PRODUCTION.md item 19.

@@ -95,6 +95,17 @@ webhook:
   # ValidatingWebhookConfiguration at startup with its self-signed CA,
   # or cert-manager populates it via the Certificate's caBundle injection.
   caBundle: ""
+  # -- Optional PEM bundle path inside the container used to verify the
+  # client certificate of webhook callers. Empty (default) preserves the
+  # legacy behaviour where any in-cluster caller can reach the webhook;
+  # production deployments should set this to the apiserver client CA.
+  clientCAFile: ""
+  # -- Optional Secret name in the install namespace whose `ca.crt` key
+  # holds the bundle referenced by clientCAFile. When set the chart mounts
+  # the Secret at /etc/portal/client-ca and forces clientCAFile to
+  # /etc/portal/client-ca/ca.crt unless clientCAFile is already set
+  # explicitly.
+  clientCASecret: ""
   # -- GVKs subject to admission. Each entry is {apiGroups, apiVersions, resources}.
   # The system-namespace exclusion is layered on top of this via namespaceSelector.
   rules:

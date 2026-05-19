@@ -16,6 +16,7 @@ type runOptions struct {
 	metricsAddr      string
 	certDir          string
 	webhookDNSNames  []string
+	clientCAFile     string
 	failClosed       bool
 	leaderElection   bool
 	installNamespace string
@@ -56,6 +57,7 @@ func newRunCmd() *cobra.Command {
 	f.StringVar(&opts.metricsAddr, "metrics-addr", opts.metricsAddr, "Prometheus /metrics + /healthz listen address")
 	f.StringVar(&opts.certDir, "cert-dir", opts.certDir, "directory containing tls.crt / tls.key (auto-generated when missing)")
 	f.StringSliceVar(&opts.webhookDNSNames, "webhook-dns", nil, "DNS names to include in the self-signed webhook certificate")
+	f.StringVar(&opts.clientCAFile, "client-ca-file", "", "PEM bundle for verifying admission webhook callers (apiserver client CA); empty disables client-cert verification (not recommended in production)")
 	f.BoolVar(&opts.failClosed, "fail-closed", opts.failClosed, "advisory: report whether deployment expects failClosed semantics")
 	f.BoolVar(&opts.leaderElection, "leader-election", opts.leaderElection, "use lease-based leader election for the audit loop")
 	f.StringVar(&opts.installNamespace, "install-namespace", opts.installNamespace, "Portal's own namespace — excluded from the webhook and used as the lease lock namespace")

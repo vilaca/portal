@@ -255,6 +255,7 @@ func runPortal(parentCtx context.Context, opts runOptions) error {
 			Listen:           opts.listen,
 			CertFile:         certFile,
 			KeyFile:          keyFile,
+			ClientCAFile:     opts.clientCAFile,
 			FailClosed:       opts.failClosed,
 			ContextBuilders:  builders,
 			InstallNamespace: opts.installNamespace,

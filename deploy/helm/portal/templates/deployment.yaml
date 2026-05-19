@@ -46,26 +46,10 @@ spec:
                   matchLabels:
                     {{- include "portal.selectorLabels" . | nindent 20 }}
       {{- end }}
-      {{- if not .Values.certManager.enabled }}
-      initContainers:
-        - name: init-certs
-          image: {{ include "portal.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          args:
-            - init-certs
-            - --namespace={{ .Release.Namespace }}
-            - --secret={{ include "portal.tlsSecretName" . }}
-            - --webhook-config={{ include "portal.fullname" . }}
-            - --service={{ include "portal.fullname" . }}
-            - --cert-dir=/etc/portal/certs
-          volumeMounts:
-            - name: webhook-tls
-              mountPath: /etc/portal/certs
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-      {{- end }}
+      # init-certs has moved into a Helm pre-install/pre-upgrade Job
+      # (see init-certs-job.yaml). The Job ServiceAccount is the only
+      # subject allowed to patch the ValidatingWebhookConfiguration; the
+      # runtime SA below has read-only access to the webhook config.
       containers:
         - name: portal
           image: {{ include "portal.image" . }}
@@ -94,6 +78,13 @@ spec:
             {{- if .Values.rules.folderConfigMap }}
             - --rules-folder=/etc/portal/rules
             {{- end }}
+            {{- $clientCA := .Values.webhook.clientCAFile -}}
+            {{- if and (not $clientCA) .Values.webhook.clientCASecret }}
+            {{- $clientCA = "/etc/portal/client-ca/ca.crt" }}
+            {{- end }}
+            {{- if $clientCA }}
+            - --client-ca-file={{ $clientCA }}
+            {{- end }}
           ports:
             - name: webhook
               containerPort: {{ .Values.webhook.port }}
@@ -121,6 +112,11 @@ spec:
             - name: webhook-tls
               mountPath: /etc/portal/certs
               readOnly: true
+            {{- if .Values.webhook.clientCASecret }}
+            - name: client-ca
+              mountPath: /etc/portal/client-ca
+              readOnly: true
+            {{- end }}
             {{- if .Values.rules.folderConfigMap }}
             - name: rules
               mountPath: /etc/portal/rules
@@ -137,19 +133,18 @@ spec:
           {{- end }}
       volumes:
         - name: webhook-tls
-          {{- if .Values.certManager.enabled }}
-          # cert-manager owns the Secret and rotates it; the main container
-          # mounts it read-only and reloads on file change.
+          # The TLS Secret is provisioned either by cert-manager (when
+          # certManager.enabled=true) or by the bootstrap Job before
+          # install/upgrade. Either way the runtime mounts it read-only.
           secret:
             secretName: {{ include "portal.tlsSecretName" . }}
-            optional: true
-          {{- else }}
-          # init-certs writes the cert material into this shared emptyDir
-          # before the main container starts. The Secret is still upserted
-          # (for persistence across Pod restarts) but the runtime read path
-          # is this emptyDir to avoid kubelet Secret-refresh timing windows.
-          emptyDir: {}
-          {{- end }}
+            optional: {{ .Values.certManager.enabled }}
+        {{- if .Values.webhook.clientCASecret }}
+        - name: client-ca
+          secret:
+            secretName: {{ .Values.webhook.clientCASecret }}
+            optional: false
+        {{- end }}
         {{- if .Values.rules.folderConfigMap }}
         - name: rules
           configMap:

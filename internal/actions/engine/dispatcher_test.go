@@ -210,6 +210,140 @@ func (f actionFunc) Idempotent() bool                                           
 func (f actionFunc) DefaultRateLimit() time.Duration                                       { return 0 }
 func (f actionFunc) Execute(ctx context.Context, v api.Violation, p map[string]any) error { return f(ctx, v, p) }
 
+// scoperAction implements api.TargetScoper and lets a test pin the resolved
+// target namespace/name independently of v.Namespace/v.Name. Mirrors what
+// patch-networkpolicy does in production.
+type scoperAction struct {
+	stubAction
+	targetNS, targetName string
+}
+
+func (s *scoperAction) TargetScope(_ api.Violation, _ map[string]any) (namespace, name string) {
+	return s.targetNS, s.targetName
+}
+
+// TestDispatcher_Scope_PortalRule_RejectsCrossNamespace covers the
+// dispatcher-level allow-list: a Violation produced by a PortalRule in
+// namespace tenant-a must not drive an action against an object outside
+// tenant-a, even if the matched object's namespace tries to escape.
+func TestDispatcher_Scope_PortalRule_RejectsCrossNamespace(t *testing.T) {
+	resetCounters(t)
+	a := &stubAction{typ: "evict", rate: time.Second}
+	d := New(map[string]api.Action{"evict": a}, NewLimiter(), NewLRU(0), Options{WorkerPoolSize: 2, QueueSize: 8})
+
+	v := sampleViolation()
+	v.Namespace = "kube-system" // attacker tried to point at kube-system
+	v.RuleSource = api.RuleSource{Origin: "PortalRule", Namespace: "tenant-a"}
+	v.Actions = []api.ActionSpec{{Type: "evict"}}
+	d.Dispatch(context.Background(), v)
+
+	if err := d.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if got := a.Calls(); got != 0 {
+		t.Fatalf("expected scope check to refuse action, got %d calls", got)
+	}
+	if got := counterValue(t, "evict", resultOutOfScope); got != 1 {
+		t.Fatalf("expected 1 out_of_scope, got %v", got)
+	}
+}
+
+// TestDispatcher_Scope_PortalRule_AllowsSameNamespace confirms that the
+// scope check is only a gate, not a deny-all — when the target namespace
+// matches the rule's CR namespace, the action runs.
+func TestDispatcher_Scope_PortalRule_AllowsSameNamespace(t *testing.T) {
+	resetCounters(t)
+	a := &stubAction{typ: "label", rate: time.Second}
+	d := New(map[string]api.Action{"label": a}, NewLimiter(), NewLRU(0), Options{WorkerPoolSize: 2, QueueSize: 8})
+
+	v := sampleViolation()
+	v.Namespace = "tenant-a"
+	v.RuleSource = api.RuleSource{Origin: "PortalRule", Namespace: "tenant-a"}
+	v.Actions = []api.ActionSpec{{Type: "label"}}
+	d.Dispatch(context.Background(), v)
+
+	if err := d.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if got := a.Calls(); got != 1 {
+		t.Fatalf("expected action to run for in-scope target, got %d calls", got)
+	}
+}
+
+// TestDispatcher_Scope_PortalClusterRule_AlwaysAllowed verifies the
+// operator-trusted origins bypass the scope check entirely.
+func TestDispatcher_Scope_PortalClusterRule_AlwaysAllowed(t *testing.T) {
+	resetCounters(t)
+	a := &stubAction{typ: "evict", rate: time.Second}
+	d := New(map[string]api.Action{"evict": a}, NewLimiter(), NewLRU(0), Options{WorkerPoolSize: 2, QueueSize: 8})
+
+	v := sampleViolation()
+	v.Namespace = "kube-system" // legitimate target for a cluster rule
+	v.RuleSource = api.RuleSource{Origin: "PortalClusterRule"}
+	v.Actions = []api.ActionSpec{{Type: "evict"}}
+	d.Dispatch(context.Background(), v)
+
+	if err := d.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if got := a.Calls(); got != 1 {
+		t.Fatalf("expected cluster-rule action to execute, got %d calls", got)
+	}
+}
+
+// TestDispatcher_Scope_PortalRule_UsesTargetScoper ensures the dispatcher
+// consults api.TargetScoper when an action's effective target diverges
+// from the matched object — the precise primitive that lets patchnp's
+// params.targetNamespace be checked against the rule's CR namespace.
+func TestDispatcher_Scope_PortalRule_UsesTargetScoper(t *testing.T) {
+	resetCounters(t)
+	a := &scoperAction{
+		stubAction: stubAction{typ: "patch-networkpolicy", rate: time.Second},
+		targetNS:   "kube-system",
+		targetName: "default-deny",
+	}
+	d := New(map[string]api.Action{"patch-networkpolicy": a}, NewLimiter(), NewLRU(0), Options{WorkerPoolSize: 2, QueueSize: 8})
+
+	v := sampleViolation()
+	v.Namespace = "tenant-a" // matched object inside scope...
+	v.RuleSource = api.RuleSource{Origin: "PortalRule", Namespace: "tenant-a"}
+	v.Actions = []api.ActionSpec{{Type: "patch-networkpolicy"}} // ...but the scoper says kube-system, which is out
+	d.Dispatch(context.Background(), v)
+
+	if err := d.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if got := a.Calls(); got != 0 {
+		t.Fatalf("expected TargetScoper-derived target to fail scope check, got %d calls", got)
+	}
+	if got := counterValue(t, "patch-networkpolicy", resultOutOfScope); got != 1 {
+		t.Fatalf("expected 1 out_of_scope, got %v", got)
+	}
+}
+
+// TestDispatcher_Scope_PortalRule_RejectsEmptyOriginNamespace catches a
+// malformed RuleSource (PortalRule origin without a namespace) — the
+// conversion path makes this unreachable, but the dispatcher belt-and-
+// suspenders refuses the action.
+func TestDispatcher_Scope_PortalRule_RejectsEmptyOriginNamespace(t *testing.T) {
+	resetCounters(t)
+	a := &stubAction{typ: "evict", rate: time.Second}
+	d := New(map[string]api.Action{"evict": a}, NewLimiter(), NewLRU(0), Options{WorkerPoolSize: 2, QueueSize: 8})
+
+	v := sampleViolation()
+	v.Namespace = "anything"
+	v.RuleSource = api.RuleSource{Origin: "PortalRule", Namespace: ""} // malformed
+	v.Actions = []api.ActionSpec{{Type: "evict"}}
+	d.Dispatch(context.Background(), v)
+
+	if err := d.Drain(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if got := a.Calls(); got != 0 {
+		t.Fatalf("malformed PortalRule origin must not execute, got %d calls", got)
+	}
+}
+
 func TestParseRateLimit(t *testing.T) {
 	cases := []struct {
 		in     string

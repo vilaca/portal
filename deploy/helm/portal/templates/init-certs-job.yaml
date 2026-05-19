@@ -1,0 +1,157 @@
+{{- if not .Values.certManager.enabled }}
+# Bootstrap Job: generates the webhook TLS material and patches the
+# ValidatingWebhookConfiguration's caBundle. Runs once per helm install /
+# upgrade so it can also serve as the cert-rotation path (regenerate the
+# Secret, re-patch the webhook). Its ServiceAccount holds the only
+# patch/update grant on the webhook config — the runtime SA does not.
+#
+# helm.sh/hook order is pre-install,pre-upgrade so the Secret + caBundle
+# are ready before the controller Deployment is reconciled. hook-delete-policy
+# tears the Job and its narrow RBAC down after success.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "portal.fullname" . }}-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "portal.fullname" . }}-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  # The bootstrap container creates the TLS Secret on first install and
+  # patches it on upgrade. resourceNames is omitted on create because the
+  # verb does not support it.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ include "portal.tlsSecretName" . | quote }}]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "portal.fullname" . }}-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "portal.fullname" . }}-bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "portal.fullname" . }}-bootstrap
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "portal.fullname" . }}-bootstrap
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  # Patch the webhook's own caBundle. Scoped by resourceNames to the chart's
+  # VWC so the grant cannot be turned into a wider cluster-admin primitive.
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    resourceNames: [{{ include "portal.fullname" . | quote }}]
+    verbs: ["get", "patch", "update"]
+  # Discovery — resourceNames cannot apply to list/watch.
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "portal.fullname" . }}-bootstrap
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "portal.fullname" . }}-bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "portal.fullname" . }}-bootstrap
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "portal.fullname" . }}-init-certs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 60
+  template:
+    metadata:
+      labels:
+        {{- include "portal.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bootstrap
+    spec:
+      serviceAccountName: {{ include "portal.fullname" . }}-bootstrap
+      restartPolicy: Never
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: init-certs
+          image: {{ include "portal.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - init-certs
+            - --namespace={{ .Release.Namespace }}
+            - --secret={{ include "portal.tlsSecretName" . }}
+            - --webhook-config={{ include "portal.fullname" . }}
+            - --service={{ include "portal.fullname" . }}
+            - --cert-dir=/tmp/portal-certs
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp/portal-certs
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

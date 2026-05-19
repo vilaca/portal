@@ -263,6 +263,7 @@ func buildViolation(
 		EnforcementAction: enforcement,
 		Actions:           actions,
 		Source:            src,
+		RuleSource:        rule.Source,
 	}
 }
 

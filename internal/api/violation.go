@@ -31,6 +31,12 @@ type Violation struct {
 	// Source carries enough metadata for sinks to render context-rich messages
 	// without re-fetching the object.
 	Source ViolationSource
+
+	// RuleSource is the origin of the rule that produced this Violation.
+	// The action dispatcher reads RuleSource.Origin and RuleSource.Namespace
+	// to enforce that namespace-scoped PortalRules cannot drive actions
+	// against objects outside their own namespace.
+	RuleSource RuleSource
 }
 
 // ViolationSource captures the originating event for downstream rendering.

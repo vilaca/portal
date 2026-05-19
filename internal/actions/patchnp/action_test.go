@@ -114,3 +114,44 @@ func TestRegistered(t *testing.T) {
 		t.Fatal("patch-networkpolicy action not registered")
 	}
 }
+
+// TestPatchNP_TargetScope_NetworkPolicyViolation prefers the violating
+// NetworkPolicy's own coordinates over anything in params, matching
+// Execute's behavior. This contract is the one the action dispatcher's
+// scope check relies on.
+func TestPatchNP_TargetScope_NetworkPolicyViolation(t *testing.T) {
+	a := New(newFakeClient()).(api.TargetScoper)
+	v := api.Violation{
+		GVK:       schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"},
+		Namespace: "tenant-a",
+		Name:      "deny-all",
+	}
+	params := map[string]any{
+		"targetNamespace": "kube-system",
+		"targetName":      "default-deny",
+	}
+	ns, name := a.TargetScope(v, params)
+	if ns != "tenant-a" || name != "deny-all" {
+		t.Fatalf("TargetScope = (%q,%q); want (tenant-a, deny-all) — NP violation must win over params", ns, name)
+	}
+}
+
+// TestPatchNP_TargetScope_ParamsDriveTarget exercises the params-derived
+// path. The dispatcher's scope check feeds this output back through the
+// PortalRule clamp, which is what stops a tenant rule from rewriting a
+// kube-system NetworkPolicy.
+func TestPatchNP_TargetScope_ParamsDriveTarget(t *testing.T) {
+	a := New(newFakeClient()).(api.TargetScoper)
+	v := api.Violation{
+		GVK:       schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"},
+		Namespace: "tenant-a",
+	}
+	params := map[string]any{
+		"targetNamespace": "kube-system",
+		"targetName":      "default-deny",
+	}
+	ns, name := a.TargetScope(v, params)
+	if ns != "kube-system" || name != "default-deny" {
+		t.Fatalf("TargetScope = (%q,%q); want (kube-system, default-deny) — params should drive target for non-NP violation", ns, name)
+	}
+}

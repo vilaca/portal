@@ -117,6 +117,14 @@ func resolveTarget(v api.Violation, params map[string]any) (ns, name string) {
 	return ns, name
 }
 
+// TargetScope satisfies api.TargetScoper so the action dispatcher can refuse
+// a PortalRule-origin invocation whose params point at a NetworkPolicy
+// outside the rule's namespace, even though the matched object's namespace
+// is in-scope.
+func (a *action) TargetScope(v api.Violation, params map[string]any) (namespace, name string) {
+	return resolveTarget(v, params)
+}
+
 // mergePatchInto deep-copies patch into dst. The merge is shallow at the top
 // level — we don't override apiVersion/kind/metadata.name, and any other key
 // in patch wins. For nested map-of-map fields, the caller-supplied map
