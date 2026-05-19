@@ -42,7 +42,11 @@ generate-docs:
 	$(GO) run ./internal/sink/prometheus/cmd/metricsdoc > docs/reference/metrics.md
 	$(GO) run ./cmd/portal docgen --out docs/reference/cli.md
 	$(HELM_DOCS) -c deploy/helm/portal -o ../../../docs/reference/helm-values.md
-	$(GOMARKDOC) -o docs/plugin-author/interface-reference.md ./internal/api
+	$(GOMARKDOC) \
+		--repository.url https://github.com/vilaca/portal \
+		--repository.default-branch main \
+		--repository.path / \
+		-o docs/plugin-author/interface-reference.md ./internal/api
 
 # generate-docs-check is the CI drift gate. Runs generate-docs and fails if
 # the working tree diverges. Run `make generate-docs` locally + commit if
