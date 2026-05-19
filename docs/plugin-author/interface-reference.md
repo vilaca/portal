@@ -55,7 +55,7 @@ The only external dependencies allowed are k8s.io/apimachinery \(for GVK and Uns
 
 
 <a name="ContextBuilders"></a>
-## func ContextBuilders
+## func [ContextBuilders](<https://github.com/vilaca/portal/blob/main/internal/api/registry.go#L85>)
 
 ```go
 func ContextBuilders() map[string]func() ContextBuilder
@@ -64,7 +64,7 @@ func ContextBuilders() map[string]func() ContextBuilder
 ContextBuilders returns a snapshot of every registered builder factory, in no particular order. The engine queries each in turn via Supports\(gvk\).
 
 <a name="RegisterAction"></a>
-## func RegisterAction
+## func [RegisterAction](<https://github.com/vilaca/portal/blob/main/internal/api/registry.go#L41>)
 
 ```go
 func RegisterAction(typ string, ctor func() Action)
@@ -73,7 +73,7 @@ func RegisterAction(typ string, ctor func() Action)
 RegisterAction adds an Action factory.
 
 <a name="RegisterContextBuilder"></a>
-## func RegisterContextBuilder
+## func [RegisterContextBuilder](<https://github.com/vilaca/portal/blob/main/internal/api/registry.go#L77>)
 
 ```go
 func RegisterContextBuilder(name string, ctor func() ContextBuilder)
@@ -82,7 +82,7 @@ func RegisterContextBuilder(name string, ctor func() ContextBuilder)
 RegisterContextBuilder adds a ContextBuilder factory.
 
 <a name="RegisterEngine"></a>
-## func RegisterEngine
+## func [RegisterEngine](<https://github.com/vilaca/portal/blob/main/internal/api/registry.go#L23>)
 
 ```go
 func RegisterEngine(name string, ctor func() ExpressionEngine)
@@ -91,7 +91,7 @@ func RegisterEngine(name string, ctor func() ExpressionEngine)
 RegisterEngine adds an ExpressionEngine factory. Last writer wins.
 
 <a name="RegisterSink"></a>
-## func RegisterSink
+## func [RegisterSink](<https://github.com/vilaca/portal/blob/main/internal/api/registry.go#L59>)
 
 ```go
 func RegisterSink(name string, ctor func() OutputSink)
@@ -100,7 +100,7 @@ func RegisterSink(name string, ctor func() OutputSink)
 RegisterSink adds an OutputSink factory.
 
 <a name="Sinks"></a>
-## func Sinks
+## func [Sinks](<https://github.com/vilaca/portal/blob/main/internal/api/registry.go#L66>)
 
 ```go
 func Sinks() map[string]func() OutputSink
@@ -109,7 +109,7 @@ func Sinks() map[string]func() OutputSink
 Sinks returns a snapshot of every registered sink factory.
 
 <a name="Action"></a>
-## type Action
+## type [Action](<https://github.com/vilaca/portal/blob/main/internal/api/action.go#L11-L16>)
 
 Action is one response capability — label, annotate, evict, patch\-NP, revoke\-SA\-token, alertmanager. Adding a new action type is one struct \+ one Register call.
 
@@ -123,7 +123,7 @@ type Action interface {
 ```
 
 <a name="ActionFor"></a>
-### func ActionFor
+### func [ActionFor](<https://github.com/vilaca/portal/blob/main/internal/api/registry.go#L48>)
 
 ```go
 func ActionFor(typ string) Action
@@ -132,7 +132,7 @@ func ActionFor(typ string) Action
 ActionFor returns a constructed Action by type, or nil if absent.
 
 <a name="ActionDispatcher"></a>
-## type ActionDispatcher
+## type [ActionDispatcher](<https://github.com/vilaca/portal/blob/main/internal/api/action.go#L22-L26>)
 
 ActionDispatcher routes Violations to enabled Actions. It is non\-blocking, applies rate\-limiting per \(rule, target\) tuple, and consults an IdempotencyStore so re\-emissions within the action's idempotency window are dropped rather than re\-executed.
 
@@ -145,7 +145,7 @@ type ActionDispatcher interface {
 ```
 
 <a name="ActionSpec"></a>
-## type ActionSpec
+## type [ActionSpec](<https://github.com/vilaca/portal/blob/main/internal/api/rule.go#L50-L55>)
 
 ActionSpec is one entry in Rule.Actions.
 
@@ -159,7 +159,7 @@ type ActionSpec struct {
 ```
 
 <a name="AdmissionRequest"></a>
-## type AdmissionRequest
+## type [AdmissionRequest](<https://github.com/vilaca/portal/blob/main/internal/api/context.go#L27-L32>)
 
 AdmissionRequest is the subset of AdmissionReview.Request that rules can read.
 
@@ -173,7 +173,7 @@ type AdmissionRequest struct {
 ```
 
 <a name="Context"></a>
-## type Context
+## type [Context](<https://github.com/vilaca/portal/blob/main/internal/api/context.go#L19-L24>)
 
 Context is the evaluation environment a rule sees. It carries three layers:
 
@@ -191,7 +191,7 @@ type Context struct {
 ```
 
 <a name="ContextBuilder"></a>
-## type ContextBuilder
+## type [ContextBuilder](<https://github.com/vilaca/portal/blob/main/internal/api/context.go#L46-L49>)
 
 ContextBuilder converts a raw unstructured resource into an evaluation Context. One ContextBuilder is responsible for one GVK family — the pod\-shaped builder covers Pod plus any GVK whose spec embeds PodTemplateSpec; a fallback builder handles everything else with only Object/Env\(object,metadata,request\).
 
@@ -203,7 +203,7 @@ type ContextBuilder interface {
 ```
 
 <a name="Decision"></a>
-## type Decision
+## type [Decision](<https://github.com/vilaca/portal/blob/main/internal/api/violation.go#L46-L52>)
 
 Decision is the admission\-time aggregate response across all rules that fired for one AdmissionReview request.
 
@@ -218,7 +218,7 @@ type Decision struct {
 ```
 
 <a name="DepEntry"></a>
-## type DepEntry
+## type [DepEntry](<https://github.com/vilaca/portal/blob/main/internal/api/lookup.go#L38-L41>)
 
 DepEntry is an \(rule, observed\-object\) pair recorded as depending on some referenced object.
 
@@ -230,7 +230,7 @@ type DepEntry struct {
 ```
 
 <a name="DepRecorder"></a>
-## type DepRecorder
+## type [DepRecorder](<https://github.com/vilaca/portal/blob/main/internal/api/lookup.go#L24-L27>)
 
 DepRecorder is the write side of the reverse\-dependency index. The lookup implementation records \(rule, object\) → \(referenced\) edges; the audit loop queries the inverse on resource\-change events to enqueue re\-evaluation.
 
@@ -242,7 +242,7 @@ type DepRecorder interface {
 ```
 
 <a name="EnforcementAction"></a>
-## type EnforcementAction
+## type [EnforcementAction](<https://github.com/vilaca/portal/blob/main/internal/api/rule.go#L29>)
 
 EnforcementAction controls how admission responds to a violation.
 
@@ -261,7 +261,7 @@ const (
 ```
 
 <a name="EventMeta"></a>
-## type EventMeta
+## type [EventMeta](<https://github.com/vilaca/portal/blob/main/internal/api/event.go#L8-L14>)
 
 EventMeta describes one event flowing through the engine. It is what EventSource produces and what ActionDispatcher / OutputSink consume alongside Violations.
 
@@ -276,7 +276,7 @@ type EventMeta struct {
 ```
 
 <a name="EventSource"></a>
-## type EventSource
+## type [EventSource](<https://github.com/vilaca/portal/blob/main/internal/api/source.go#L8-L15>)
 
 EventSource produces evaluation events. The admission webhook, the audit informer loop, and the NetworkPolicy analyser each implement EventSource and feed the same RuleEngine \+ ActionDispatcher pipeline.
 
@@ -292,7 +292,7 @@ type EventSource interface {
 ```
 
 <a name="ExpressionEngine"></a>
-## type ExpressionEngine
+## type [ExpressionEngine](<https://github.com/vilaca/portal/blob/main/internal/api/engine.go#L10-L16>)
 
 ExpressionEngine compiles rule expressions into evaluable Programs. expr\-lang is the default implementation; CEL/Rego/starlark can be added in v3 without touching the rule schema.
 
@@ -307,7 +307,7 @@ type ExpressionEngine interface {
 ```
 
 <a name="Engine"></a>
-### func Engine
+### func [Engine](<https://github.com/vilaca/portal/blob/main/internal/api/registry.go#L30>)
 
 ```go
 func Engine(name string) ExpressionEngine
@@ -316,7 +316,7 @@ func Engine(name string) ExpressionEngine
 Engine returns a constructed ExpressionEngine by name, or nil if absent.
 
 <a name="IdempotencyStore"></a>
-## type IdempotencyStore
+## type [IdempotencyStore](<https://github.com/vilaca/portal/blob/main/internal/api/action.go#L36-L40>)
 
 IdempotencyStore remembers recently\-dispatched \(rule,gvk,ns,name,actionType\) tuples. Default impl is an in\-memory LRU; v2 may swap in a persistent store.
 
@@ -329,7 +329,7 @@ type IdempotencyStore interface {
 ```
 
 <a name="Lookup"></a>
-## type Lookup
+## type [Lookup](<https://github.com/vilaca/portal/blob/main/internal/api/lookup.go#L11-L19>)
 
 Lookup is exposed to rule expressions as \`cluster.\<gvk\>.byName\(ns, name\)\` and \`cluster.\<gvk\>.list\(ns, selector\)\`. Backed by audit's shared informer caches at runtime; pluggable for tests.
 
@@ -346,7 +346,7 @@ type Lookup interface {
 ```
 
 <a name="Matcher"></a>
-## type Matcher
+## type [Matcher](<https://github.com/vilaca/portal/blob/main/internal/api/rule.go#L44-L47>)
 
 Matcher narrows the set of resources a rule applies to.
 
@@ -358,7 +358,7 @@ type Matcher struct {
 ```
 
 <a name="Mode"></a>
-## type Mode
+## type [Mode](<https://github.com/vilaca/portal/blob/main/internal/api/rule.go#L19>)
 
 Mode names a rule\-evaluation loop. A rule may opt in to multiple modes.
 
@@ -378,7 +378,7 @@ const (
 ```
 
 <a name="NamespaceSelector"></a>
-## type NamespaceSelector
+## type [NamespaceSelector](<https://github.com/vilaca/portal/blob/main/internal/api/rule.go#L38-L41>)
 
 NamespaceSelector is the include/exclude shape used by Rule.Match.Namespaces.
 
@@ -390,7 +390,7 @@ type NamespaceSelector struct {
 ```
 
 <a name="ObjectRef"></a>
-## type ObjectRef
+## type [ObjectRef](<https://github.com/vilaca/portal/blob/main/internal/api/lookup.go#L30-L34>)
 
 ObjectRef identifies one cluster object for the dep index.
 
@@ -403,7 +403,7 @@ type ObjectRef struct {
 ```
 
 <a name="OutputSink"></a>
-## type OutputSink
+## type [OutputSink](<https://github.com/vilaca/portal/blob/main/internal/api/sink.go#L8-L12>)
 
 OutputSink writes violations somewhere visible. AlertManager, PolicyReport, Prometheus, stdout/JSON all implement this. Each sink is independently enable\-able and must be safe for concurrent Emit calls.
 
@@ -416,7 +416,7 @@ type OutputSink interface {
 ```
 
 <a name="Program"></a>
-## type Program
+## type [Program](<https://github.com/vilaca/portal/blob/main/internal/api/engine.go#L20-L22>)
 
 Program is a compiled, reusable rule expression. It MUST be safe for concurrent Eval calls.
 
@@ -427,7 +427,7 @@ type Program interface {
 ```
 
 <a name="RateLimiter"></a>
-## type RateLimiter
+## type [RateLimiter](<https://github.com/vilaca/portal/blob/main/internal/api/action.go#L30-L32>)
 
 RateLimiter limits dispatch frequency per opaque key. Returning false means "drop"; the dispatcher counts these into portal\_actions\_total\{result="ratelimited"\}.
 
@@ -438,7 +438,7 @@ type RateLimiter interface {
 ```
 
 <a name="Rule"></a>
-## type Rule
+## type [Rule](<https://github.com/vilaca/portal/blob/main/internal/api/rule.go#L59-L72>)
 
 Rule is the canonical parsed shape of a Portal rule, regardless of whether it originated from a folder YAML file or a PortalClusterRule / PortalRule CR.
 
@@ -460,7 +460,7 @@ type Rule struct {
 ```
 
 <a name="Rule.HasMode"></a>
-### func \(Rule\) HasMode
+### func \(Rule\) [HasMode](<https://github.com/vilaca/portal/blob/main/internal/api/rule.go#L83>)
 
 ```go
 func (r Rule) HasMode(m Mode) bool
@@ -469,7 +469,7 @@ func (r Rule) HasMode(m Mode) bool
 HasMode reports whether the rule opts into the given evaluation mode.
 
 <a name="RuleEngine"></a>
-## type RuleEngine
+## type [RuleEngine](<https://github.com/vilaca/portal/blob/main/internal/api/engine.go#L26-L28>)
 
 RuleEngine dispatches a Context to every rule indexed under that GVK and returns the produced Violations.
 
@@ -480,7 +480,7 @@ type RuleEngine interface {
 ```
 
 <a name="RuleIndex"></a>
-## type RuleIndex
+## type [RuleIndex](<https://github.com/vilaca/portal/blob/main/internal/api/engine.go#L32-L37>)
 
 RuleIndex is the read\-only view of the rule store that the engine consults. Loaders \(folder, CR\) write into a concrete index that implements this.
 
@@ -494,7 +494,7 @@ type RuleIndex interface {
 ```
 
 <a name="RuleLoader"></a>
-## type RuleLoader
+## type [RuleLoader](<https://github.com/vilaca/portal/blob/main/internal/api/loader.go#L8-L12>)
 
 RuleLoader feeds parsed Rules into a central index. The folder loader walks a directory and watches it via fsnotify; the CR loader watches the two PortalClusterRule / PortalRule CRDs. Both produce the same Rule shape.
 
@@ -507,7 +507,7 @@ type RuleLoader interface {
 ```
 
 <a name="RuleSource"></a>
-## type RuleSource
+## type [RuleSource](<https://github.com/vilaca/portal/blob/main/internal/api/rule.go#L75-L80>)
 
 RuleSource records the origin of a Rule for diagnostics.
 
@@ -521,7 +521,7 @@ type RuleSource struct {
 ```
 
 <a name="Severity"></a>
-## type Severity
+## type [Severity](<https://github.com/vilaca/portal/blob/main/internal/api/rule.go#L8>)
 
 Severity classifies a rule for downstream routing and alerting.
 
@@ -542,7 +542,7 @@ const (
 ```
 
 <a name="UserInfo"></a>
-## type UserInfo
+## type [UserInfo](<https://github.com/vilaca/portal/blob/main/internal/api/context.go#L35-L40>)
 
 UserInfo identifies the requester at admission.
 
@@ -556,7 +556,7 @@ type UserInfo struct {
 ```
 
 <a name="Violation"></a>
-## type Violation
+## type [Violation](<https://github.com/vilaca/portal/blob/main/internal/api/violation.go#L12-L34>)
 
 Violation is the cross\-cutting DTO emitted by rule evaluation. Every output channel \(admission response, PolicyReport, AlertManager, Prometheus, action dispatcher\) consumes Violations.
 
@@ -587,7 +587,7 @@ type Violation struct {
 ```
 
 <a name="ViolationSource"></a>
-## type ViolationSource
+## type [ViolationSource](<https://github.com/vilaca/portal/blob/main/internal/api/violation.go#L37-L42>)
 
 ViolationSource captures the originating event for downstream rendering.
 
