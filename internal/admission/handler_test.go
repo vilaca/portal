@@ -457,6 +457,59 @@ func TestMalformedBodyReturns400(t *testing.T) {
 	}
 }
 
+// TestMalformedObjectFailsClosed ensures the handler refuses an
+// AdmissionReview whose Object.Raw cannot be parsed as a JSON object. Prior
+// behavior was to return Allowed=true, which let any caller bypass every
+// rule by sending a JSON array as the object payload.
+func TestMalformedObjectFailsClosed(t *testing.T) {
+	eng := &stubEngine{}
+	disp := &stubDispatcher{}
+	s := newTestSource(t, eng, disp, nil, Options{})
+
+	review := &admissionv1.AdmissionReview{
+		TypeMeta: metav1.TypeMeta{APIVersion: "admission.k8s.io/v1", Kind: "AdmissionReview"},
+		Request: &admissionv1.AdmissionRequest{
+			UID:       types.UID("uid-malformed"),
+			Kind:      metav1.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"},
+			Resource:  metav1.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+			Operation: admissionv1.Create,
+			Object:    runtime.RawExtension{Raw: []byte(`[1,2,3]`)},
+		},
+	}
+	resp := doRequest(t, s.Handler(), review)
+	if resp.Response == nil || resp.Response.Allowed {
+		t.Fatalf("expected Allowed=false on malformed object, got %+v", resp.Response)
+	}
+	if eng.callCount() != 0 {
+		t.Errorf("engine should not have been called on decode failure, got %d calls", eng.callCount())
+	}
+	if len(disp.snapshot()) != 0 {
+		t.Errorf("dispatcher should not have been called on decode failure")
+	}
+}
+
+// TestNoObjectPayloadAllows preserves the allow-on-empty-payload behavior for
+// legitimate sub-resource operations where neither Object nor OldObject is
+// present.
+func TestNoObjectPayloadAllows(t *testing.T) {
+	eng := &stubEngine{}
+	s := newTestSource(t, eng, nil, nil, Options{})
+
+	review := &admissionv1.AdmissionReview{
+		TypeMeta: metav1.TypeMeta{APIVersion: "admission.k8s.io/v1", Kind: "AdmissionReview"},
+		Request: &admissionv1.AdmissionRequest{
+			UID:       types.UID("uid-empty"),
+			Kind:      metav1.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"},
+			Resource:  metav1.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+			Operation: admissionv1.Connect,
+		},
+	}
+	resp := doRequest(t, s.Handler(), review)
+	if resp.Response == nil || !resp.Response.Allowed {
+		t.Fatalf("expected Allowed=true on empty payload, got %+v", resp.Response)
+	}
+}
+
 func TestAggregateMixedActions(t *testing.T) {
 	d := aggregate([]api.Violation{
 		{Rule: "warn1", EnforcementAction: api.EnforceWarn, Message: "w1"},

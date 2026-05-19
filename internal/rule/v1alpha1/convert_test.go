@@ -95,4 +95,58 @@ func TestPortalRuleSpecToRule_NamespacedPath(t *testing.T) {
 	if len(got.Match.GVK) != 1 || got.Match.GVK[0].Kind != "Pod" {
 		t.Errorf("GVK didn't round-trip: %#v", got.Match.GVK)
 	}
+	wantNS := api.NamespaceSelector{Include: []string{"prod"}}
+	if !reflect.DeepEqual(got.Match.Namespaces, wantNS) {
+		t.Errorf("namespace scope not clamped to CR namespace: got %#v, want %#v", got.Match.Namespaces, wantNS)
+	}
+}
+
+// TestPortalRuleSpecToRule_ClampsScopeToOwnNamespace verifies that a
+// PortalRule cannot escape its own namespace by setting Match.Namespaces.
+// Without the clamp a delegate with create-PortalRule in namespace X could
+// craft a rule that fires on objects in kube-system or cluster-wide.
+func TestPortalRuleSpecToRule_ClampsScopeToOwnNamespace(t *testing.T) {
+	spec := RuleSpec{
+		Name:    "pwn",
+		Enabled: true,
+		Match: Matcher{
+			GVK: []RuleGVK{{Group: "", Version: "v1", Kind: "Pod"}},
+			Namespaces: NamespaceSelector{
+				Include: []string{"kube-system"},
+				Exclude: []string{"tenant-a"},
+			},
+		},
+		Expression: "true",
+	}
+	meta := metav1.ObjectMeta{Name: "pwn", Namespace: "tenant-a", UID: types.UID("uid-x")}
+
+	got := PortalRuleSpecToRule(spec, meta)
+
+	wantNS := api.NamespaceSelector{Include: []string{"tenant-a"}}
+	if !reflect.DeepEqual(got.Match.Namespaces, wantNS) {
+		t.Fatalf("PortalRule scope was not clamped: got %#v, want %#v", got.Match.Namespaces, wantNS)
+	}
+	if !got.Enabled {
+		t.Errorf("PortalRule with non-empty namespace should remain enabled")
+	}
+}
+
+// TestPortalRuleSpecToRule_EmptyNamespaceDisables guards the defensive branch:
+// a namespace-scoped CRD should never reach this code with an empty Namespace,
+// but if it does (e.g., test fixture, in-memory loader), we refuse to grant
+// cluster-wide reach by disabling the rule.
+func TestPortalRuleSpecToRule_EmptyNamespaceDisables(t *testing.T) {
+	spec := RuleSpec{
+		Name:       "no-ns",
+		Enabled:    true,
+		Match:      Matcher{GVK: []RuleGVK{{Group: "", Version: "v1", Kind: "Pod"}}},
+		Expression: "true",
+	}
+	meta := metav1.ObjectMeta{Name: "no-ns", UID: types.UID("uid-z")}
+
+	got := PortalRuleSpecToRule(spec, meta)
+
+	if got.Enabled {
+		t.Fatalf("PortalRule with empty Namespace must be disabled, got Enabled=true")
+	}
 }

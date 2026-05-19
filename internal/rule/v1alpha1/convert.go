@@ -25,11 +25,21 @@ func PortalClusterRuleSpecToRule(spec PortalClusterRuleSpec, meta metav1.ObjectM
 // PortalRuleSpecToRule converts a PortalRuleSpec + its ObjectMeta into
 // api.Rule. Path is "<namespace>/<name>" for namespaced CRs so log lines and
 // status messages can disambiguate.
+//
+// The rule's Match.Namespaces is clamped to the CR's own namespace so a
+// delegate with create-PortalRule permission in namespace X cannot evaluate
+// rules against (or fire actions on) objects in other namespaces. A
+// PortalRule whose ObjectMeta has an empty Namespace is disabled — that
+// shape should never reach the apiserver for a namespace-scoped CRD, but if
+// it does we refuse to grant it cluster-wide reach.
 func PortalRuleSpecToRule(spec PortalRuleSpec, meta metav1.ObjectMeta) api.Rule {
 	r := specToRule(spec)
 	path := meta.Name
 	if meta.Namespace != "" {
 		path = meta.Namespace + "/" + meta.Name
+		r.Match.Namespaces = api.NamespaceSelector{Include: []string{meta.Namespace}}
+	} else {
+		r.Enabled = false
 	}
 	r.Source = api.RuleSource{
 		Origin: "PortalRule",

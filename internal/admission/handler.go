@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -139,15 +140,27 @@ func (h *handler) process(ctx context.Context, req *admissionv1.AdmissionRequest
 		return resp
 	}
 
-	// (3) Decode the inbound object as *unstructured.Unstructured.
+	// (3) Decode the inbound object as *unstructured.Unstructured. An empty
+	// payload (errNoAdmissionObject) can be legitimate for some sub-resource
+	// operations, so allow there; any other error means malformed JSON and
+	// we refuse — returning allow on a parse failure would let an attacker
+	// who can reach the webhook bypass every rule by sending a non-object body.
 	obj, err := decodeObject(req)
 	if err != nil {
-		// Cannot decode — record as error (handler defer counts it), but be
-		// permissive: render allow so we don't deadlock cluster bootstrap
-		// for un-typed objects. The chart's failurePolicy decides the
-		// fail-closed posture.
+		if errors.Is(err, errNoAdmissionObject) {
+			slog.Warn("admission request has no object payload — allowing", "operation", string(req.Operation))
+			promsink.AdmissionRequestsTotal.WithLabelValues("allow").Inc()
+			return resp
+		}
 		slog.Warn("admission decode object", "err", err)
-		promsink.AdmissionRequestsTotal.WithLabelValues("allow").Inc()
+		resp.Allowed = false
+		resp.Result = &metav1.Status{
+			Status:  metav1.StatusFailure,
+			Message: "portal: could not decode admission object",
+			Reason:  metav1.StatusReasonBadRequest,
+			Code:    http.StatusBadRequest,
+		}
+		promsink.AdmissionRequestsTotal.WithLabelValues("error").Inc()
 		return resp
 	}
 
@@ -355,15 +368,22 @@ func aggregate(violations []api.Violation) api.Decision {
 	return d
 }
 
+// errNoAdmissionObject is returned by decodeObject when an AdmissionRequest
+// carries neither Object nor OldObject — legal for some sub-resource ops, so
+// the handler keeps allow as the safe default rather than failing closed.
+var errNoAdmissionObject = fmt.Errorf("AdmissionRequest has no object payload")
+
 // decodeObject unmarshals the inbound object on a CREATE/UPDATE request.
-// For DELETE there's no inbound object — fall back to OldObject.
+// For DELETE there's no inbound object — fall back to OldObject. Returns
+// errNoAdmissionObject when no payload is present at all; any other error
+// indicates a malformed payload that the handler must refuse.
 func decodeObject(req *admissionv1.AdmissionRequest) (*unstructured.Unstructured, error) {
 	raw := req.Object.Raw
 	if len(raw) == 0 {
 		raw = req.OldObject.Raw
 	}
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("AdmissionRequest has no object payload")
+		return nil, errNoAdmissionObject
 	}
 	obj := &unstructured.Unstructured{}
 	if err := obj.UnmarshalJSON(raw); err != nil {

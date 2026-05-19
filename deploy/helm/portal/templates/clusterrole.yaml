@@ -17,13 +17,11 @@ rules:
       - nodes
     verbs: ["get", "list", "watch"]
   {{- if .Values.rbac.actions.revoketoken }}
+  # revoke-sa-token needs cluster-wide read+delete to find and remove the
+  # legacy SA-token Secrets a violated pod's ServiceAccount references.
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "delete"]
-  {{- else }}
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "list", "watch"]
   {{- end }}
   # Workloads.
   - apiGroups: ["apps"]
