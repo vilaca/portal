@@ -100,4 +100,4 @@ kind delete cluster --name portal-quickstart
 
 - Write your own rule: [first-rule.md](first-rule.md).
 - Production install: [install-helm.md](install-helm.md).
-- Browse worked examples: [../cookbook/](../cookbook/).
+- Browse worked examples: [../cookbook/](../cookbook/index.md).

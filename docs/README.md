@@ -8,17 +8,17 @@ The design originated in `podwatcher-poc`, an internal proof-of-concept that inf
 
 | Folder | What lives there |
 |--------|------------------|
-| [getting-started/](getting-started/) | Install on kind, install on production, write your first rule |
-| [concepts/](concepts/) | Architecture, admission vs audit, cross-resource model, pod sugar, actions, fail-closed |
-| [reference/](reference/) | Rule schema, expression language, CRDs, actions, metrics, Helm values, CLI |
-| [cookbook/](cookbook/) | Worked examples — privileged container, label enforcement, PDB cross-resource, etc. |
-| [operator/](operator/) | HA, leader election, RBAC scoping, certificates, upgrades, troubleshooting, observability, recovery |
-| [security/](security/) | Threat model, RBAC posture, supply chain, responsible disclosure |
-| [plugin-author/](plugin-author/) | Add a custom action, sink, or expression engine |
-| [contributing/](contributing/) | Repo layout, module boundaries, testing, release process |
-| [adr/](adr/) | Architecture Decision Records |
-| [migration/](migration/) | Side-by-side rule syntax (`podwatcher-poc` → Portal); coexistence with Kyverno |
-| [comparison/](comparison/) | Feature matrix vs the field; rule-syntax delta against the original `podwatcher-poc` |
+| [getting-started/](getting-started/index.md) | Install on kind, install on production, write your first rule |
+| [concepts/](concepts/index.md) | Architecture, admission vs audit, cross-resource model, pod sugar, actions, fail-closed |
+| [reference/](reference/index.md) | Rule schema, expression language, CRDs, actions, metrics, Helm values, CLI |
+| [cookbook/](cookbook/index.md) | Worked examples — privileged container, label enforcement, PDB cross-resource, etc. |
+| [operator/](operator/index.md) | HA, leader election, RBAC scoping, certificates, upgrades, troubleshooting, observability, recovery |
+| [security/](security/index.md) | Threat model, RBAC posture, supply chain, responsible disclosure |
+| [plugin-author/](plugin-author/index.md) | Add a custom action, sink, or expression engine |
+| [contributing/](contributing/index.md) | Repo layout, module boundaries, testing, release process |
+| [adr/](adr/index.md) | Architecture Decision Records |
+| [migration/](migration/index.md) | Side-by-side rule syntax (`podwatcher-poc` → Portal); coexistence with Kyverno |
+| [comparison/](comparison/index.md) | Feature matrix vs the field; rule-syntax delta against the original `podwatcher-poc` |
 
 ## 5-minute start
 

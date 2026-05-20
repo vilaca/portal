@@ -70,4 +70,4 @@ Re-run the same `kubectl run` command. The pod is now **admitted**, but `kubectl
 
 - [../concepts/admission-vs-audit.md](../concepts/admission-vs-audit.md) — when each loop fires.
 - [../concepts/context-and-pod-sugar.md](../concepts/context-and-pod-sugar.md) — `container.*` vs `object.*`.
-- [../cookbook/](../cookbook/) — worked examples for common policies.
+- [../cookbook/](../cookbook/index.md) — worked examples for common policies.

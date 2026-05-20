@@ -46,10 +46,12 @@ nav:
   - Home: README.md
   - POC to production: POC-TO-PRODUCTION.md
   - Getting started:
+      - getting-started/index.md
       - Quickstart on kind: getting-started/quickstart-kind.md
       - Install with Helm: getting-started/install-helm.md
       - Your first rule: getting-started/first-rule.md
   - Concepts:
+      - concepts/index.md
       - Architecture: concepts/architecture.md
       - Admission vs audit: concepts/admission-vs-audit.md
       - Cross-resource lookups: concepts/cross-resource.md
@@ -57,6 +59,7 @@ nav:
       - Actions and rate limiting: concepts/actions-and-rate-limiting.md
       - Fail-closed: concepts/fail-closed.md
   - Reference:
+      - reference/index.md
       - Rule schema: reference/rule-schema.md
       - Expression language: reference/expression-language.md
       - Actions: reference/actions.md
@@ -67,6 +70,7 @@ nav:
           - PortalClusterRule: reference/crd/portalclusterrule.md
           - PortalRule: reference/crd/portalrule.md
   - Cookbook:
+      - cookbook/index.md
       - Disallow privileged: cookbook/disallow-privileged.md
       - Enforce labels: cookbook/enforce-labels.md
       - Require PDB per Deployment: cookbook/require-pdb-per-deployment.md
@@ -76,6 +80,7 @@ nav:
       - Quarantine on violation: cookbook/quarantine-on-violation.md
       - Revoke SA token on exec (v2): cookbook/revoke-sa-token-on-exec.md
   - Operator:
+      - operator/index.md
       - HA and leader election: operator/ha-and-leader-election.md
       - RBAC scoping: operator/rbac-scoping.md
       - Certificate management: operator/certificate-management.md
@@ -84,25 +89,30 @@ nav:
       - Observability: operator/observability.md
       - Recovery from self-lockout: operator/recovery-from-self-lockout.md
   - Security:
+      - security/index.md
       - Threat model: security/threat-model.md
       - RBAC posture: security/rbac-posture.md
       - Supply chain: security/supply-chain.md
       - Responsible disclosure: security/responsible-disclosure.md
   - Plugin authors:
+      - plugin-author/index.md
       - Custom action: plugin-author/custom-action.md
       - Custom sink: plugin-author/custom-sink.md
       - Custom expression engine: plugin-author/custom-expression-engine.md
       - Interface reference: plugin-author/interface-reference.md
   - Contributing:
+      - contributing/index.md
       - Repo layout: contributing/repo-layout.md
       - Module boundaries: contributing/module-boundaries.md
       - Testing approach: contributing/testing-approach.md
       - Release process: contributing/release-process.md
   - Migration:
+      - migration/index.md
       - From podwatcher-poc: migration/from-podwatcher-poc.md
       - Side-by-side rule syntax: migration/side-by-side-rule-syntax.md
       - Coexistence with Kyverno: migration/coexistence-with-kyverno.md
   - ADRs:
+      - adr/index.md
       - 0001 Go and expr-lang: adr/0001-go-and-exprlang.md
       - 0002 CRDs primary, folder fallback: adr/0002-crds-primary-folder-fallback.md
       - 0003 Fail-closed default: adr/0003-fail-closed-default.md
@@ -110,5 +120,6 @@ nav:
       - 0005 Cross-resource full v1: adr/0005-cross-resource-full-v1.md
       - 0006 Pod sugar narrow façade: adr/0006-pod-sugar-narrow-facade.md
   - Comparison:
+      - comparison/index.md
       - Feature matrix: comparison/feature-matrix.md
       - Portal vs podwatcher: comparison/podwatcher-comparison.md
