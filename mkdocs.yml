@@ -6,6 +6,12 @@ repo_name: vilaca/portal
 docs_dir: docs
 strict: true
 
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+
 theme:
   name: material
   features:
